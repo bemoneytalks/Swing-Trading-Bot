@@ -562,18 +562,89 @@
             border: 2px solid #30363d;
         }
 
+        .confluence-signal.stay-long {
+            background: #0d3321;
+            color: #56d364;
+            border: 2px solid #2ea043;
+            font-size: 24px;
+        }
+
+        .confluence-signal.stay-short {
+            background: #3d1212;
+            color: #f47067;
+            border: 2px solid #da3633;
+            font-size: 24px;
+        }
+
         .confluence-signal.lean-bull {
             background: #2d1f00;
             color: #e3b341;
             border: 2px solid #d29922;
-            text-shadow: 0 0 20px rgba(210, 153, 34, 0.4);
+            font-size: 22px;
         }
 
         .confluence-signal.lean-bear {
             background: #2d1f00;
             color: #e3b341;
             border: 2px solid #d29922;
-            text-shadow: 0 0 20px rgba(210, 153, 34, 0.4);
+            font-size: 22px;
+        }
+
+        /* Fast Pullback / Breakout Alert */
+        .fast-pullback-alert {
+            display: inline-block;
+            padding: 6px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            margin: 6px 0;
+        }
+        .fast-pullback-alert.fast-pullback { background: #3d1212; color: #ff7b72; border: 1px solid #da3633; }
+        .fast-pullback-alert.fast-breakout { background: #0d2e16; color: #3fb950; border: 1px solid #238636; }
+        .fast-pullback-alert.pullback-watch { background: #2d1f00; color: #d29922; border: 1px solid #9e6a03; }
+        .fast-pullback-alert.no-alert { display: none; }
+
+        /* Trend context label */
+        .trend-context-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-left: 6px;
+        }
+        .trend-context-badge.uptrend  { background: #0d2e16; color: #3fb950; border: 1px solid #238636; }
+        .trend-context-badge.downtrend { background: #3d1212; color: #ff7b72; border: 1px solid #da3633; }
+        .trend-context-badge.range    { background: #1c1e23; color: #7d8590; border: 1px solid #30363d; }
+
+        /* Event flip badges */
+        .flip-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            margin: 2px 3px;
+            letter-spacing: 0.5px;
+        }
+        .flip-badge.gex-flip-long { background: #0d2e16; color: #3fb950; border: 1px solid #238636; }
+        .flip-badge.gex-flip-short { background: #3d1212; color: #ff7b72; border: 1px solid #da3633; }
+        .flip-badge.flow-flip-bull { background: #0d2e16; color: #56d364; border: 1px solid #2ea043; }
+        .flip-badge.flow-flip-bear { background: #3d1212; color: #f47067; border: 1px solid #da3633; }
+
+        /* Recovery advisory */
+        .recovery-advisory {
+            background: #1a1500;
+            border: 1px solid #9e6a03;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 11px;
+            color: #d29922;
+            margin: 6px auto;
+            display: inline-block;
         }
 
         /* Confidence Overlay */
@@ -794,6 +865,10 @@
 
         .scan-signal-badge.enter-long { background: #0d4429; color: #3fb950; }
         .scan-signal-badge.enter-short { background: #4a1111; color: #ff7b72; }
+        .scan-signal-badge.stay-long { background: #0d3321; color: #56d364; }
+        .scan-signal-badge.stay-short { background: #3d1212; color: #f47067; }
+        .scan-signal-badge.lean-bull { background: #2d1f00; color: #d29922; }
+        .scan-signal-badge.lean-bear { background: #2d1f00; color: #d29922; }
         .scan-signal-badge.no-signal { background: #1c1e23; color: #484f58; }
 
         .scan-strength-bar {
@@ -2609,7 +2684,7 @@ async function loadGex() {
 }
 
 function buildConfidenceDetails(details) {
-    let html = '<div class="card" style="margin-top:16px;"><div class="card-title">Leading Indicators (Signal Confidence)</div>';
+    let html = '<div class="card" style="margin-top:16px;"><div class="card-title">Leading Indicators — Signal Confidence (6)</div>';
 
     // News Sentiment
     const news = details.news || {};
@@ -2697,6 +2772,33 @@ function buildConfidenceDetails(details) {
     if (np.latest_net_premium != null) {
         const lnpColor = np.latest_net_premium > 0 ? '#3fb950' : '#ff7b72';
         html += '<div class="confidence-detail-row"><span>Latest Net Premium</span><span class="value" style="color:' + lnpColor + '">' + (np.latest_net_premium > 0 ? '+' : '') + '$' + Math.abs(np.latest_net_premium).toLocaleString() + '</span></div>';
+    }
+    if (np.flip_event) {
+        const flipDir = np.flip_direction === 'positive' ? 'positive' : 'negative';
+        const flipColor = flipDir === 'positive' ? '#3fb950' : '#ff7b72';
+        html += '<div class="confidence-detail-row"><span>Flip Event</span><span class="value" style="color:' + flipColor + '">⚡ Flow flipped ' + flipDir + ' today</span></div>';
+    }
+    html += '</div>';
+
+    // GEX Regime
+    const gex = details.gex || {};
+    const gexSignalColor = gex.signal === 1 ? '#3fb950' : (gex.signal === -1 ? '#ff7b72' : '#7d8590');
+    const gexSignalLabel = gex.signal === 1 ? 'LONG GAMMA (BULLISH)' : (gex.signal === -1 ? 'SHORT GAMMA (BEARISH)' : 'NEUTRAL');
+    html += '<div class="confidence-detail-card">';
+    html += '<div class="confidence-detail-title">6. GEX Regime <span style="color:' + gexSignalColor + '; font-size:11px; margin-left:8px;">' + gexSignalLabel + '</span>';
+    if (gex.flip_event) {
+        const flipDirGex = gex.flip_direction === 'LONG' ? 'gex-flip-long' : 'gex-flip-short';
+        html += ' <span class="flip-badge ' + flipDirGex + '">⚡ GEX FLIP ' + (gex.flip_direction || '') + '</span>';
+    }
+    html += '</div>';
+    html += '<div class="confidence-detail-row"><span>Regime</span><span class="value" style="color:' + gexSignalColor + '">' + (gex.regime || 'UNKNOWN') + '</span></div>';
+    if (gex.total_gex !== undefined && gex.total_gex !== null) {
+        const gexNum = typeof gex.total_gex === 'number' ? gex.total_gex.toLocaleString() : gex.total_gex;
+        html += '<div class="confidence-detail-row"><span>Total GEX</span><span class="value">' + gexNum + '</span></div>';
+    }
+    if (gex.flip_level) {
+        html += '<div class="confidence-detail-row"><span>GEX Flip Level</span><span class="value">' + gex.flip_level.toLocaleString() + '</span></div>';
+        html += '<div class="confidence-detail-row"><span>Spot vs Flip</span><span class="value" style="color:' + (gex.above_flip ? '#3fb950' : '#ff7b72') + '">' + (gex.above_flip ? 'ABOVE flip — long gamma' : 'BELOW flip — short gamma') + '</span></div>';
     }
     html += '</div>';
 
@@ -2874,18 +2976,21 @@ async function loadConfluence() {
 
         document.getElementById('confluence-content').innerHTML = `
             <div class="signal-card" style="text-align:center;">
-                <div class="signal-date">SPX Swing Trade Confluence</div>
-                <div style="font-size:11px; color:#484f58; margin-bottom:8px;">${data.timestamp} | Threshold: ${data.threshold}/10 indicators must align</div>
+                <div class="signal-date">SPX Swing Trade Confluence ${tcBadge}</div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:8px;">${data.timestamp} | Need ${data.threshold}/${data.total_indicators || 12} to ENTER · 6–7 = STAY · 5 = LEAN</div>
                 <div class="signal-close"><span>SPX</span> ${data.live ? data.live.current.toLocaleString() : data.price.toLocaleString()}</div>
                 <div style="font-size:12px; color:${data.change_1d >= 0 ? '#3fb950' : '#ff7b72'}; margin-bottom:4px;">
                     ${data.change_1d >= 0 ? '+' : ''}${data.change_1d}% prev close
                 </div>
                 ${liveHtml}
-                <div style="margin-top:20px; display:flex; align-items:flex-start; justify-content:center; gap:24px; flex-wrap:wrap;">
+                ${flipBadges ? '<div style="margin:10px 0 4px;">' + flipBadges + '</div>' : ''}
+                ${fastAlertHtml}
+                ${recoveryHtml}
+                <div style="margin-top:16px; display:flex; align-items:flex-start; justify-content:center; gap:24px; flex-wrap:wrap;">
                     <div>
-                        <div style="font-size:10px; color:#484f58; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px;">Trend System (10)</div>
+                        <div style="font-size:10px; color:#484f58; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px;">Trend System (${data.total_indicators || 12})</div>
                         <div class="confluence-signal ${data.signal_class}">${data.signal}</div>
-                        <div class="confluence-score" style="color:${signalColor}; font-size:28px; margin-top:4px;">${data.strength}/10</div>
+                        <div class="confluence-score" style="color:${signalColor}; font-size:28px; margin-top:4px;">${data.strength}/${data.total_indicators || 12}</div>
                         <div style="color:#7d8590; font-size:11px; margin-top:2px;">
                             <span style="color:#3fb950;">${data.long_count}↑</span> &nbsp;
                             <span style="color:#7d8590;">${data.neutral_count}•</span> &nbsp;
@@ -2919,6 +3024,9 @@ async function loadConfluence() {
                 </div>
                 <div style="margin-top:14px;">
                     <div class="confluence-meter">${meterDots}</div>
+                    <div style="font-size:9px; color:#484f58; margin-top:4px;">
+                        8+ = ENTER &nbsp;·&nbsp; 6–7 = STAY &nbsp;·&nbsp; 5 = LEAN &nbsp;·&nbsp; &lt;5 = NO SIGNAL
+                    </div>
                 </div>
                 ${data.confidence && data.confidence.warnings && data.confidence.warnings.length > 0 ? '<div class="confidence-warnings">' + data.confidence.warnings.map(w => '<div class="confidence-warning-item">' + w + '</div>').join('') + '</div>' : ''}
             </div>
@@ -2932,7 +3040,7 @@ async function loadConfluence() {
 
         document.getElementById('confluence-loading').style.display = 'none';
         document.getElementById('confluence-content').style.display = 'block';
-        setStatus('Confluence: ' + data.signal + ' (' + data.strength + '/10)');
+        setStatus('Confluence: ' + data.signal + ' (' + data.strength + '/' + (data.total_indicators || 12) + ')');
 
         // Sync ticker bar with the live price already fetched inside /api/confluence
         // so both displays show the same number at the same instant
@@ -4380,8 +4488,11 @@ async function loadNdxConfluence() {
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
 
-        const signalColor = data.signal === 'ENTER LONG' ? '#3fb950' :
-                           data.signal === 'ENTER SHORT' ? '#ff7b72' : '#7d8590';
+        const signalColor = data.signal === 'ENTER LONG'  ? '#3fb950' :
+                           data.signal === 'ENTER SHORT' ? '#ff7b72' :
+                           data.signal === 'STAY LONG'   ? '#56d364' :
+                           data.signal === 'STAY SHORT'  ? '#f47067' :
+                           (data.signal === 'LEAN LONG' || data.signal === 'LEAN SHORT') ? '#d29922' : '#7d8590';
 
         // Build indicator checklist
         let indicatorRows = '';
@@ -4398,9 +4509,10 @@ async function loadNdxConfluence() {
                 + '</div>';
         });
 
-        // Build confluence meter dots
+        // Build confluence meter dots (12 indicators)
+        const totalDots = data.total_indicators || 12;
         let meterDots = '';
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < totalDots; i++) {
             if (i < data.long_count) {
                 meterDots += '<div class="confluence-dot long">&#x2191;</div>';
             } else if (i < data.long_count + data.neutral_count) {
@@ -4408,6 +4520,47 @@ async function loadNdxConfluence() {
             } else {
                 meterDots += '<div class="confluence-dot short">&#x2193;</div>';
             }
+        }
+
+        // Build flip event badges
+        let flipBadges = '';
+        if (data.gex_signal && data.gex_signal.flip_event) {
+            const gexDir = data.gex_signal.flip_direction === 'LONG' ? 'gex-flip-long' : 'gex-flip-short';
+            const gexLabel = data.gex_signal.flip_direction === 'LONG' ? '⚡ GEX FLIP LONG' : '⚡ GEX FLIP SHORT';
+            flipBadges += '<span class="flip-badge ' + gexDir + '">' + gexLabel + '</span>';
+        }
+        if (data.np_signal && data.np_signal.flip_event) {
+            const npDir = data.np_signal.flip_direction === 'positive' ? 'flow-flip-bull' : 'flow-flip-bear';
+            const npLabel = data.np_signal.flip_direction === 'positive' ? '⚡ FLOW FLIP ↑' : '⚡ FLOW FLIP ↓';
+            flipBadges += '<span class="flip-badge ' + npDir + '">' + npLabel + '</span>';
+        }
+
+        // Build fast pullback/breakout alert
+        let fastAlertHtml = '';
+        if (data.fast_pullback && data.fast_pullback.alert_class !== 'no-alert') {
+            const fp = data.fast_pullback;
+            const triggerList = Object.values(fp.triggers || {})
+                .filter(t => t.triggered)
+                .map(t => '<span style="font-size:10px; color:' + (t.direction === 'bearish' ? '#f47067' : t.direction === 'bullish' ? '#3fb950' : '#7d8590') + '; margin:0 4px;">' + t.label + '</span>')
+                .join('');
+            fastAlertHtml = '<div style="margin:8px 0;">'
+                + '<div class="fast-pullback-alert ' + fp.alert_class + '">'
+                + '🚨 ' + fp.alert_level + ' &nbsp;(' + (fp.alert_dir === 'bearish' ? fp.bearish_count : fp.bullish_count) + '/' + fp.threshold + ' triggers)'
+                + '</div>'
+                + (triggerList ? '<div style="margin:4px 0;">' + triggerList + '</div>' : '')
+                + '</div>';
+        }
+
+        // Trend context badge
+        const tcLower = (data.trend_context || 'range').toLowerCase();
+        const tcBadge = '<span class="trend-context-badge ' + tcLower + '">' + (data.trend_context || 'RANGE') + '</span>';
+
+        // Recovery advisory
+        let recoveryHtml = '';
+        if (data.recovery_bullish) {
+            recoveryHtml = '<div class="recovery-advisory">📈 RSI recovered from oversold — potential trend restart signal</div>';
+        } else if (data.recovery_bearish) {
+            recoveryHtml = '<div class="recovery-advisory" style="border-color:#da3633; color:#ff7b72; background:#2a1111;">📉 RSI recovered from overbought — potential trend reversal</div>';
         }
 
         // Build live session bar if available
@@ -4460,18 +4613,21 @@ async function loadNdxConfluence() {
 
         document.getElementById('ndx-confluence-content').innerHTML = `
             <div class="signal-card" style="text-align:center;">
-                <div class="signal-date">NDX Swing Trade Confluence <span class="ndx-badge" style="vertical-align:middle;">NDX</span></div>
-                <div style="font-size:11px; color:#484f58; margin-bottom:8px;">${data.timestamp} | Threshold: ${data.threshold}/10 indicators must align</div>
+                <div class="signal-date">NDX Swing Trade Confluence <span class="ndx-badge" style="vertical-align:middle;">NDX</span> ${tcBadge}</div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:8px;">${data.timestamp} | Need ${data.threshold}/${data.total_indicators || 12} to ENTER · 6–7 = STAY · 5 = LEAN</div>
                 <div class="signal-close"><span>NDX</span> ${data.live ? data.live.current.toLocaleString() : data.price.toLocaleString()}</div>
                 <div style="font-size:12px; color:${data.change_1d >= 0 ? '#3fb950' : '#ff7b72'}; margin-bottom:4px;">
                     ${data.change_1d >= 0 ? '+' : ''}${data.change_1d}% prev close
                 </div>
                 ${liveHtml}
-                <div style="margin-top:20px; display:flex; align-items:flex-start; justify-content:center; gap:24px; flex-wrap:wrap;">
+                ${flipBadges ? '<div style="margin:10px 0 4px;">' + flipBadges + '</div>' : ''}
+                ${fastAlertHtml}
+                ${recoveryHtml}
+                <div style="margin-top:16px; display:flex; align-items:flex-start; justify-content:center; gap:24px; flex-wrap:wrap;">
                     <div>
-                        <div style="font-size:10px; color:#484f58; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px;">Trend System (10)</div>
+                        <div style="font-size:10px; color:#484f58; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px;">Trend System (${data.total_indicators || 12})</div>
                         <div class="confluence-signal ${data.signal_class}">${data.signal}</div>
-                        <div class="confluence-score" style="color:${signalColor}; font-size:28px; margin-top:4px;">${data.strength}/10</div>
+                        <div class="confluence-score" style="color:${signalColor}; font-size:28px; margin-top:4px;">${data.strength}/${data.total_indicators || 12}</div>
                         <div style="color:#7d8590; font-size:11px; margin-top:2px;">
                             <span style="color:#3fb950;">${data.long_count}↑</span> &nbsp;
                             <span style="color:#7d8590;">${data.neutral_count}•</span> &nbsp;
@@ -4505,6 +4661,9 @@ async function loadNdxConfluence() {
                 </div>
                 <div style="margin-top:14px;">
                     <div class="confluence-meter">${meterDots}</div>
+                    <div style="font-size:9px; color:#484f58; margin-top:4px;">
+                        8+ = ENTER &nbsp;·&nbsp; 6–7 = STAY &nbsp;·&nbsp; 5 = LEAN &nbsp;·&nbsp; &lt;5 = NO SIGNAL
+                    </div>
                 </div>
                 ${data.confidence && data.confidence.warnings && data.confidence.warnings.length > 0 ? '<div class="confidence-warnings">' + data.confidence.warnings.map(w => '<div class="confidence-warning-item">' + w + '</div>').join('') + '</div>' : ''}
             </div>
@@ -4518,7 +4677,7 @@ async function loadNdxConfluence() {
 
         document.getElementById('ndx-confluence-loading').style.display = 'none';
         document.getElementById('ndx-confluence-content').style.display = 'block';
-        setStatus('NDX Confluence: ' + data.signal + ' (' + data.strength + '/10)');
+        setStatus('NDX Confluence: ' + data.signal + ' (' + data.strength + '/' + (data.total_indicators || 12) + ')');
 
         // Load NDX net premium data asynchronously
         loadNdxNetPremium();

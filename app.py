@@ -439,9 +439,53 @@ def api_confluence():
             "neutral_count": result["neutral_count"],
             "strength": result["strength"],
             "threshold": result["threshold"],
+            "total_indicators": result.get("total_indicators", len(scores_list)),
+            "trend_context": result.get("trend_context", "RANGE"),
+            "recovery_bullish": result.get("recovery_bullish", False),
+            "recovery_bearish": result.get("recovery_bearish", False),
             "scores": scores_list,
             "timestamp": result["timestamp"],
         }
+        # Include GEX and net premium signals for badge display
+        if result.get("gex_signal"):
+            gex = result["gex_signal"]
+            resp["gex_signal"] = {
+                "signal": gex.get("signal", 0),
+                "regime": gex.get("regime", "UNKNOWN"),
+                "flip_event": gex.get("flip_event", False),
+                "flip_direction": gex.get("flip_direction", ""),
+                "total_gex": gex.get("total_gex", 0),
+                "flip_level": gex.get("flip_level"),
+                "above_flip": gex.get("above_flip", False),
+            }
+        if result.get("np_signal"):
+            np = result["np_signal"]
+            resp["np_signal"] = {
+                "signal": np.get("signal", 0),
+                "label": np.get("label", ""),
+                "tier": np.get("tier", ""),
+                "flip_event": np.get("flip_event", False),
+                "flip_direction": np.get("flip_direction", ""),
+                "streak": np.get("streak", 0),
+                "streak_direction": np.get("streak_direction", "neutral"),
+                "latest_net_premium": np.get("latest_net_premium"),
+            }
+        if result.get("fast_pullback"):
+            fp = result["fast_pullback"]
+            resp["fast_pullback"] = {
+                "alert_level": fp.get("alert_level", "NO ALERT"),
+                "alert_class": fp.get("alert_class", "no-alert"),
+                "alert_dir": fp.get("alert_dir", "neutral"),
+                "bearish_count": fp.get("bearish_count", 0),
+                "bullish_count": fp.get("bullish_count", 0),
+                "total_active": fp.get("total_active", 0),
+                "threshold": fp.get("threshold", 3),
+                "triggers": {k: {"triggered": v.get("triggered", False),
+                                  "direction": v.get("direction", "neutral"),
+                                  "label": v.get("label", ""),
+                                  "detail": v.get("detail", "")}
+                             for k, v in fp.get("triggers", {}).items()},
+            }
         if live:
             resp["live"] = live
         if result.get("confidence"):

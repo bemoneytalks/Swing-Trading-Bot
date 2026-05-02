@@ -2,13 +2,15 @@
 Signal Confidence Overlay — Leading Indicators System
 
 Grades confluence signals as HIGH / MEDIUM / LOW confidence based on
-4 leading indicators that detect conditions BEFORE price moves:
+6 leading indicators that detect conditions BEFORE price moves:
   1. News Sentiment (headlines from yfinance)
   2. Crude Oil Correlation (Brent/WTI direction vs SPX/NDX)
-  3. Dealer Positioning (GEX + options flow)
+  3. Dealer Positioning (options flow P/C ratios, IV rank)
   4. Multi-Timeframe Heikin-Ashi Trends
+  5. Net Premium Flow (Day-1 flip + streak tiers)
+  6. GEX Regime (long/short gamma, flip events)
 
-When confluence fires ENTER SHORT but leading indicators conflict,
+When confluence fires ENTER LONG/SHORT but leading indicators conflict,
 the grade drops to LOW with specific warnings.
 """
 
@@ -555,6 +557,13 @@ def assess_confidence(confluence_result, index='SPX'):
     except Exception:
         net_prem = {"signal": 0, "label": "Unavailable", "detail": "Could not load net premium data"}
 
+    # Import GEX regime signal
+    try:
+        from gex import get_gex_signal
+        gex_sig = get_gex_signal(index=index)
+    except Exception:
+        gex_sig = {"signal": 0, "label": "Unavailable", "regime": "UNKNOWN"}
+
     if direction == "ENTER LONG":
         expected_sign = 1
     elif direction == "ENTER SHORT":
@@ -578,6 +587,7 @@ def assess_confidence(confluence_result, index='SPX'):
                 "positioning": positioning,
                 "multi_timeframe": mtf,
                 "net_premium": net_prem,
+                "gex": gex_sig,
             },
         })
 
@@ -594,6 +604,7 @@ def assess_confidence(confluence_result, index='SPX'):
         ("Dealer Positioning", positioning),
         ("Multi-Timeframe", mtf),
         ("Net Premium Flow", net_prem),
+        ("GEX Regime", gex_sig),
     ]
 
     conflicts = 0
@@ -621,6 +632,9 @@ def assess_confidence(confluence_result, index='SPX'):
             elif name == "Net Premium Flow":
                 np_dir = net_prem.get("streak_direction", "unknown")
                 warnings.append(f"Net premium flow is {np_dir} — conflicts with {direction}")
+            elif name == "GEX Regime":
+                gex_regime = gex_sig.get("regime", "UNKNOWN")
+                warnings.append(f"GEX regime is {gex_regime} — conflicts with {direction}")
         elif sig == expected_sign:
             supporting += 1
         else:
@@ -663,5 +677,6 @@ def assess_confidence(confluence_result, index='SPX'):
             "positioning": positioning,
             "multi_timeframe": mtf,
             "net_premium": net_prem,
+            "gex": gex_sig,
         },
     })
