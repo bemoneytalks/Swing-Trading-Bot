@@ -41,6 +41,13 @@ BULL_THRESHOLD = 0.55
 BEAR_THRESHOLD = 0.45
 STRONG_BEAR_THRESHOLD = 0.35
 
+# High-confidence filter — only surface predictions in the high-conviction zone
+# Bull prob > HIGH_CONF = high-confidence bullish call
+# Bull prob < LOW_CONF  = high-confidence bearish call
+# Predictions in the 35–65% zone are uncertain; filtered separately in backtest
+HIGH_CONF_THRESHOLD = 0.65
+LOW_CONF_THRESHOLD  = 0.35
+
 # Data cache
 CACHE_DIR = "cache"
 CACHE_EXPIRY_HOURS = 4

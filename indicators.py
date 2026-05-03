@@ -113,7 +113,7 @@ def _fetch_cross_asset_data(start_date, end_date):
 def add_all_features(df):
     """Add all technical indicators and engineered features to the dataframe."""
     df = df.copy()
-    df.index = pd.to_datetime(df.index, utc=True).tz_localize(None)
+    df.index = pd.to_datetime(df.index, utc=True).tz_localize(None).normalize()
 
     # --- Price Action Features ---
     df["returns_1d"] = df["Close"].pct_change()

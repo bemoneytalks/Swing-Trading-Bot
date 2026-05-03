@@ -240,29 +240,42 @@ def api_backtest():
 
         rows = []
         correct = 0
+        hc_correct = 0
+        hc_total = 0
         for i in range(len(recent)):
             pred = int(preds[i])
             actual = int(actuals[i])
             hit = pred == actual
+            prob = float(probas[i])
+            is_high_conf = (prob >= config.HIGH_CONF_THRESHOLD or prob <= config.LOW_CONF_THRESHOLD)
             if hit:
                 correct += 1
+            if is_high_conf:
+                hc_total += 1
+                if hit:
+                    hc_correct += 1
             rows.append({
                 "date": recent.index[i].strftime("%Y-%m-%d"),
                 "close": round(float(recent.iloc[i]["Close"]), 2),
-                "prob": round(float(probas[i]) * 100, 1),
+                "prob": round(prob * 100, 1),
                 "signal": signal_label(probas[i]),
                 "signal_class": signal_class(probas[i]),
                 "actual": "BULL" if actual == 1 else "BEAR",
-                "hit": hit
+                "hit": hit,
+                "is_high_conf": is_high_conf
             })
 
+        hc_accuracy = round(hc_correct / hc_total * 100, 1) if hc_total > 0 else None
         return jsonify({
             "success": True,
             "index": index,
             "rows": rows,
             "accuracy": round(correct / len(recent) * 100, 1),
             "correct": correct,
-            "total": len(recent)
+            "total": len(recent),
+            "high_conf_accuracy": hc_accuracy,
+            "high_conf_correct": hc_correct,
+            "high_conf_total": hc_total
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})

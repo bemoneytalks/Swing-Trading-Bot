@@ -223,6 +223,46 @@
             color: #e6edf3;
         }
 
+        .backtest-stats {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .backtest-stat-block {
+            text-align: right;
+        }
+
+        .backtest-stat-block .stat-label {
+            font-size: 11px;
+            color: #7d8590;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .backtest-stat-block .stat-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #e6edf3;
+        }
+
+        .backtest-stat-block .stat-value.high-conf-val {
+            color: #d29922;
+        }
+
+        tr.high-conf-row {
+            background: rgba(210, 153, 34, 0.07);
+        }
+
+        tr.high-conf-row td {
+            border-left: 2px solid rgba(210, 153, 34, 0.4);
+        }
+
+        tr.uncertain-row {
+            opacity: 0.45;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -2456,7 +2496,7 @@ async function loadBacktest() {
         if (!data.success) throw new Error(data.error);
 
         let tableRows = data.rows.map(r => `
-            <tr>
+            <tr class="${r.is_high_conf ? 'high-conf-row' : 'uncertain-row'}">
                 <td>${r.date}</td>
                 <td>${r.close.toLocaleString()}</td>
                 <td>${r.prob}%</td>
@@ -2466,14 +2506,27 @@ async function loadBacktest() {
             </tr>
         `).join('');
 
+        const hcBlock = data.high_conf_total > 0 ? `
+            <div class="backtest-stat-block">
+                <div class="stat-label">High-Conf Accuracy</div>
+                <div class="stat-value high-conf-val">${data.high_conf_correct}/${data.high_conf_total} (${data.high_conf_accuracy}%)</div>
+            </div>` : '';
+
         document.getElementById('backtest-content').innerHTML = `
             <div class="backtest-card">
                 <div class="backtest-header">
                     <div class="card-title" style="margin:0; border:none; padding:0;">Last 30 Trading Days</div>
-                    <div class="backtest-accuracy">
-                        Accuracy: <strong>${data.correct}/${data.total} (${data.accuracy}%)</strong>
+                    <div class="backtest-stats">
+                        <div class="backtest-stat-block">
+                            <div class="stat-label">Overall Accuracy</div>
+                            <div class="stat-value">${data.correct}/${data.total} (${data.accuracy}%)</div>
+                        </div>
+                        ${hcBlock}
                     </div>
                 </div>
+                <p style="font-size:11px; color:#7d8590; margin:0 0 12px 0;">
+                    ⭐ Highlighted rows = high-conviction calls (bull &gt;65% or &lt;35%). Dimmed rows = uncertain zone (35–65%), lower reliability.
+                </p>
                 <table>
                     <thead>
                         <tr>
@@ -2492,7 +2545,7 @@ async function loadBacktest() {
 
         document.getElementById('backtest-loading').style.display = 'none';
         document.getElementById('backtest-content').style.display = 'block';
-        setStatus(`Backtest loaded - ${data.accuracy}% accuracy`);
+        setStatus(`Backtest loaded - ${data.accuracy}% accuracy (${data.high_conf_accuracy || 'N/A'}% high-conf)`);
     } catch (err) {
         document.getElementById('backtest-loading').style.display = 'none';
         document.getElementById('backtest-error').style.display = 'block';
@@ -5568,7 +5621,7 @@ async function loadNdxBacktest() {
         if (!data.success) throw new Error(data.error);
 
         let tableRows = data.rows.map(r => `
-            <tr>
+            <tr class="${r.is_high_conf ? 'high-conf-row' : 'uncertain-row'}">
                 <td>${r.date}</td>
                 <td>${r.close.toLocaleString()}</td>
                 <td>${r.prob}%</td>
@@ -5578,14 +5631,27 @@ async function loadNdxBacktest() {
             </tr>
         `).join('');
 
+        const hcBlock = data.high_conf_total > 0 ? `
+            <div class="backtest-stat-block">
+                <div class="stat-label">High-Conf Accuracy</div>
+                <div class="stat-value high-conf-val">${data.high_conf_correct}/${data.high_conf_total} (${data.high_conf_accuracy}%)</div>
+            </div>` : '';
+
         document.getElementById('ndx-backtest-content').innerHTML = `
             <div class="backtest-card">
                 <div class="backtest-header">
                     <div class="card-title" style="margin:0; border:none; padding:0;">NDX — Last 30 Trading Days <span class="ndx-badge" style="vertical-align:middle;">NDX</span></div>
-                    <div class="backtest-accuracy">
-                        Accuracy: <strong>${data.correct}/${data.total} (${data.accuracy}%)</strong>
+                    <div class="backtest-stats">
+                        <div class="backtest-stat-block">
+                            <div class="stat-label">Overall Accuracy</div>
+                            <div class="stat-value">${data.correct}/${data.total} (${data.accuracy}%)</div>
+                        </div>
+                        ${hcBlock}
                     </div>
                 </div>
+                <p style="font-size:11px; color:#7d8590; margin:0 0 12px 0;">
+                    ⭐ Highlighted rows = high-conviction calls (bull &gt;65% or &lt;35%). Dimmed rows = uncertain zone (35–65%), lower reliability.
+                </p>
                 <table>
                     <thead>
                         <tr>
@@ -5604,7 +5670,7 @@ async function loadNdxBacktest() {
 
         document.getElementById('ndx-backtest-loading').style.display = 'none';
         document.getElementById('ndx-backtest-content').style.display = 'block';
-        setStatus(`NDX Backtest loaded - ${data.accuracy}% accuracy`);
+        setStatus(`NDX Backtest loaded - ${data.accuracy}% accuracy (${data.high_conf_accuracy || 'N/A'}% high-conf)`);
     } catch (err) {
         document.getElementById('ndx-backtest-loading').style.display = 'none';
         document.getElementById('ndx-backtest-error').style.display = 'block';

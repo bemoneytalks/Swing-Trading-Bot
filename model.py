@@ -46,11 +46,11 @@ def prepare_data(df):
     """Create target variable and clean data for modeling."""
     df = add_all_features(df)
 
-    # Target: will the next day close higher than open?
-    # This approximates the first ~2 hour move direction since
-    # the opening range often sets the tone for the session.
-    # 1 = bullish day (close > open), 0 = bearish day (close <= open)
-    df["target"] = (df["Close"].shift(-1) > df["Open"].shift(-1)).astype(int)
+    # Target: will tomorrow's close be higher than today's close?
+    # Close-to-close return is more stable and meaningful than
+    # candle direction (close > open) which is noisy and session-layout-dependent.
+    # 1 = next day closes above today's close, 0 = next day closes at or below today's close
+    df["target"] = (df["Close"].shift(-1) > df["Close"]).astype(int)
 
     # Replace inf values and drop rows with NaN
     df = df.replace([np.inf, -np.inf], np.nan)
