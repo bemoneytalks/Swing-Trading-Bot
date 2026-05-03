@@ -1,9 +1,113 @@
 """Technical indicator calculations and feature engineering for SPX."""
 
+import os
+import time
+
 import numpy as np
 import pandas as pd
 import ta
+import yfinance as yf
 import config
+
+# ---------------------------------------------------------------------------
+# Cross-asset cache configuration
+# ---------------------------------------------------------------------------
+_CACHE_PATH = os.path.join(os.path.dirname(__file__), "cache", "cross_asset.csv")
+_CACHE_TTL_SECONDS = 4 * 3600  # 4 hours
+
+_XA_TICKERS = {
+    "xa_vix":   "^VIX",
+    "xa_vix3m": "^VIX3M",
+    "xa_tlt":   "TLT",
+    "xa_gld":   "GLD",
+    "xa_dxy":   "DX-Y.NYB",
+}
+
+
+def _fetch_cross_asset_data(start_date, end_date):
+    """Fetch daily Close prices for VIX and cross-asset instruments.
+
+    Uses a disk cache at ``cache/cross_asset.csv``.  The cache is reused
+    unless it is older than 4 hours *or* the requested date range extends
+    beyond what is already cached.  Individual ticker failures are skipped
+    gracefully so a partial result is always returned.
+
+    Parameters
+    ----------
+    start_date : str | date-like
+        First date needed (inclusive).
+    end_date : str | date-like
+        Last date needed (inclusive).
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: xa_vix, xa_vix3m, xa_tlt, xa_gld, xa_dxy
+        Index  : tz-naive dates
+    """
+    start_date = pd.Timestamp(start_date).normalize()
+    end_date   = pd.Timestamp(end_date).normalize()
+
+    # ---- Try to load cache ------------------------------------------------
+    cached = None
+    cache_is_fresh = False
+    if os.path.exists(_CACHE_PATH):
+        cache_age = time.time() - os.path.getmtime(_CACHE_PATH)
+        if cache_age < _CACHE_TTL_SECONDS:
+            try:
+                cached = pd.read_csv(_CACHE_PATH, index_col="date", parse_dates=True)
+                cached.index = cached.index.tz_localize(None)
+                # Check that the cached range covers the requested range
+                if (cached.index.min() <= start_date and
+                        cached.index.max() >= end_date):
+                    cache_is_fresh = True
+            except Exception:
+                cached = None
+
+    if cache_is_fresh and cached is not None:
+        return cached
+
+    # ---- Fetch from Yahoo Finance -----------------------------------------
+    # Download one extra day before start so pct_change is available
+    fetch_start = (start_date - pd.Timedelta(days=30)).strftime("%Y-%m-%d")
+    fetch_end   = (end_date   + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
+    frames = {}
+    for col, ticker in _XA_TICKERS.items():
+        try:
+            raw = yf.download(
+                ticker,
+                start=fetch_start,
+                end=fetch_end,
+                auto_adjust=True,
+                progress=False,
+            )
+            if raw.empty:
+                continue
+            # Flatten MultiIndex columns if present (yfinance ≥ 0.2)
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+            series = raw["Close"].copy()
+            series.index = pd.to_datetime(series.index).tz_localize(None)
+            series.name = col
+            frames[col] = series
+        except Exception as exc:
+            print(f"[indicators] WARNING: could not fetch {ticker}: {exc}")
+
+    if not frames:
+        return pd.DataFrame()
+
+    xa = pd.concat(frames.values(), axis=1)
+    xa.index.name = "date"
+
+    # ---- Persist cache -----------------------------------------------------
+    try:
+        os.makedirs(os.path.dirname(_CACHE_PATH), exist_ok=True)
+        xa.to_csv(_CACHE_PATH, index=True)
+    except Exception as exc:
+        print(f"[indicators] WARNING: could not write cross-asset cache: {exc}")
+
+    return xa
 
 
 def add_all_features(df):
@@ -151,6 +255,57 @@ def add_all_features(df):
 
     # Clean up inf values
     df = df.replace([np.inf, -np.inf], np.nan)
+
+    # --- Cross-Asset Features (VIX, rates, gold, dollar) ---
+    xa = _fetch_cross_asset_data(df.index.min(), df.index.max())
+
+    if not xa.empty:
+        # Left-join on date index so df shape is preserved; ffill gaps
+        df = df.join(xa, how="left")
+        df[list(xa.columns)] = df[list(xa.columns)].ffill()
+
+        # -- VIX features --------------------------------------------------
+        if "xa_vix" in df.columns:
+            df["xa_vix_chg"]      = df["xa_vix"].pct_change()
+            df["xa_vix_ma20"]     = df["xa_vix"].rolling(20).mean()
+            df["xa_vix_dist_ma20"] = (df["xa_vix"] - df["xa_vix_ma20"]) / df["xa_vix_ma20"]
+            df["xa_vix_high"]     = (df["xa_vix"] > 25).astype(int)
+            df["xa_vix_low"]      = (df["xa_vix"] < 15).astype(int)
+
+        # -- VIX term structure (contango = front VIX < 3-month VIX) -------
+        if "xa_vix" in df.columns and "xa_vix3m" in df.columns:
+            df["xa_vix_ts"]       = df["xa_vix"] / df["xa_vix3m"]
+            df["xa_vix_contango"] = (df["xa_vix_ts"] < 1).astype(int)
+
+        # -- TLT features --------------------------------------------------
+        if "xa_tlt" in df.columns:
+            df["xa_tlt_chg"]   = df["xa_tlt"].pct_change()
+            df["xa_tlt_chg5"]  = df["xa_tlt"].pct_change(5)
+            df["xa_tlt_trend"] = (
+                df["xa_tlt"] > df["xa_tlt"].ewm(span=10).mean()
+            ).astype(int)
+
+        # -- GLD features --------------------------------------------------
+        if "xa_gld" in df.columns:
+            df["xa_gld_chg"]  = df["xa_gld"].pct_change()
+            df["xa_gld_chg5"] = df["xa_gld"].pct_change(5)
+
+        # -- DXY features --------------------------------------------------
+        if "xa_dxy" in df.columns:
+            df["xa_dxy_chg"]  = df["xa_dxy"].pct_change()
+            df["xa_dxy_chg5"] = df["xa_dxy"].pct_change(5)
+
+        # -- SPX / TLT rolling correlation (risk-on / risk-off signal) -----
+        if "xa_tlt" in df.columns:
+            tlt_ret = df["xa_tlt"].pct_change()
+            df["xa_spx_tlt_corr20"] = df["returns_1d"].rolling(20).corr(tlt_ret)
+
+        # Clean up any inf values introduced by the division above
+        df = df.replace([np.inf, -np.inf], np.nan)
+
+        # Drop raw price-level columns — keep only derived features
+        raw_cols = [c for c in _XA_TICKERS.keys() if c in df.columns]
+        df = df.drop(columns=raw_cols)
 
     return df
 
