@@ -476,8 +476,8 @@ def get_gex_signal(index='SPX'):
     # Fetch fresh GEX data
     try:
         gex = fetch_gex_data(index=index)
-        total_gex  = gex["total_gex"]
-        flip_level = gex.get("gex_flip")
+        total_gex  = float(gex["total_gex"])
+        flip_level = float(gex["gex_flip"]) if gex.get("gex_flip") is not None else None
         spot       = gex["spot"]
 
         regime = "LONG GAMMA" if total_gex > 0 else "SHORT GAMMA"
@@ -504,9 +504,29 @@ def get_gex_signal(index='SPX'):
             "fetched_at":     datetime.now().isoformat(),
         }
 
-        os.makedirs("cache", exist_ok=True)
-        with open(cache_path, "w") as f:
-            json.dump(result, f)
+        # Atomic write — bypasses iCloud provenance + avoids os.getcwd()
+        import tempfile
+        _base = os.path.dirname(os.path.abspath(__file__))
+        cache_dir = os.path.join(_base, "cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        if not os.path.isabs(cache_path):
+            cache_path = os.path.join(_base, cache_path)
+        fd, tmp = tempfile.mkstemp(dir=cache_dir, suffix=".tmp")
+        try:
+            os.close(fd)
+            with open(tmp, "w") as f:
+                json.dump(result, f)
+            try:
+                if os.path.exists(cache_path):
+                    os.remove(cache_path)
+            except OSError:
+                pass
+            os.replace(tmp, cache_path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
 
         return result
     except Exception:
