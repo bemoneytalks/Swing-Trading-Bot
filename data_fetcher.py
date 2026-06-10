@@ -3,11 +3,17 @@
 import os
 import time
 import json
+import tempfile
 import subprocess
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
 import config
+
+# Absolute path to the project directory, derived from __file__ so it works
+# in the Launch Agent context where os.getcwd() raises EPERM (launchd runs
+# with iCloud Drive as CWD but doesn't grant getcwd access to Python.app).
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def _safe_remove(path):
@@ -20,6 +26,63 @@ def _safe_remove(path):
             os.remove(path)
     except Exception:
         pass
+
+
+def _abs(path):
+    """Resolve a relative path against the project directory without os.getcwd().
+    os.getcwd() raises EPERM in the Launch Agent context (iCloud Drive CWD)."""
+    if os.path.isabs(path):
+        return path
+    return os.path.join(_BASE_DIR, path)
+
+
+def _atomic_write_csv(df, path):
+    """Write DataFrame to CSV atomically via temp file + os.replace().
+    Bypasses macOS iCloud provenance (EPERM) and avoids os.getcwd()."""
+    path = _abs(path)
+    dir_ = os.path.dirname(path)
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+    try:
+        os.close(fd)
+        df.to_csv(tmp)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
+
+
+def _atomic_write_json(data, path):
+    """Write JSON atomically via temp file + os.replace().
+    Bypasses macOS iCloud provenance (EPERM) and avoids os.getcwd()."""
+    path = _abs(path)
+    dir_ = os.path.dirname(path)
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+    try:
+        os.close(fd)
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
 
 
 def _cache_path(cache_name="spx_daily.csv"):
@@ -78,6 +141,7 @@ def fetch_index_data(ticker, cache_name, force_refresh=False):
     if not force_refresh and _cache_is_fresh(ticker, cache_name) and os.path.exists(cache):
         print(f"[DATA] Loading {cache_name} from cache...")
         df = pd.read_csv(cache, index_col=0, parse_dates=True)
+        df = df.dropna(subset=["Open", "High", "Low", "Close"])
         print(f"[DATA] {len(df)} trading days loaded (cached)")
         return df
 
@@ -95,12 +159,16 @@ def fetch_index_data(ticker, cache_name, force_refresh=False):
     df = df[["Open", "High", "Low", "Close", "Volume"]]
     df.index.name = "Date"
 
-    # Delete old files first — macOS com.apple.provenance blocks in-place overwrites
-    _safe_remove(cache)
-    _safe_remove(_cache_meta_path(cache_name))
-    df.to_csv(cache)
-    with open(_cache_meta_path(cache_name), "w") as f:
-        json.dump({"fetched_at": datetime.now().isoformat(), "rows": len(df)}, f)
+    # Drop incomplete rows — yfinance sometimes returns the latest day with
+    # Volume but NaN OHLC, which poisons predictions (NaN close → invalid JSON)
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+
+    # Use atomic temp-file + rename writes — macOS com.apple.provenance blocks
+    # in-place overwrites from Python.app, but os.replace() (rename) is not
+    # affected by xattrs on the destination file.
+    _atomic_write_csv(df, cache)
+    _atomic_write_json({"fetched_at": datetime.now().isoformat(), "rows": len(df)},
+                       _cache_meta_path(cache_name))
 
     print(f"[DATA] {len(df)} trading days fetched ({df.index[0].date()} to {df.index[-1].date()})")
     return df
