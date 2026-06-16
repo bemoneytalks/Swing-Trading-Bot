@@ -8,6 +8,7 @@ Open: http://localhost:5050
 import os
 import sys
 import json
+import math
 import warnings
 import traceback
 from datetime import datetime
@@ -630,13 +631,13 @@ def api_scan():
             })
 
         signals_found = sum(1 for r in rows if r["signal"] != "NO SIGNAL")
-        return jsonify({
+        return jsonify(_sanitize({
             "success": True,
             "rows": rows,
             "total_scanned": len(rows),
             "signals_found": signals_found,
             "timestamp": datetime.now().strftime("%H:%M:%S"),
-        })
+        }))
     except Exception as e:
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
 
@@ -984,7 +985,9 @@ def api_live():
 
 
 def _sanitize(obj):
-    """Recursively convert numpy scalars to JSON-serializable Python types."""
+    """Recursively convert numpy scalars to JSON-serializable Python types and
+    replace non-finite floats (NaN/Inf) with None — a literal NaN in the output
+    is invalid JSON and breaks the browser ('Unexpected token N')."""
     if isinstance(obj, dict):
         return {k: _sanitize(v) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -994,7 +997,9 @@ def _sanitize(obj):
     if isinstance(obj, (np.integer,)):
         return int(obj)
     if isinstance(obj, (np.floating,)):
-        return float(obj)
+        obj = float(obj)
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
     return obj
 
 
@@ -1125,5 +1130,7 @@ def api_trade_log():
 
 if __name__ == "__main__":
     print("\n  SPX/NDX Trading Bot Dashboard")
-    print("  Open in your browser: http://localhost:5050\n")
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    print("  Open in your browser: http://127.0.0.1:5050\n")
+    # Use IPv4 explicitly — macOS resolves 'localhost' to ::1 (IPv6) in
+    # modern browsers, which won't match an IPv4-only bind.
+    app.run(host="127.0.0.1", port=5050, debug=False)
