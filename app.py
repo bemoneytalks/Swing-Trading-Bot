@@ -75,6 +75,33 @@ def signal_class(bull_prob):
         return "strong-bear"
 
 
+def _get_cor1m():
+    """Fetch the current Cboe 1-Month Implied Correlation Index (^COR1M).
+
+    Yahoo only serves the latest snapshot for this symbol (no history), so this
+    is a same-day context reading. Returns a dict with the value and a risk-regime
+    zone label, or None if unavailable. High correlation = risk-off; low = calm.
+    """
+    try:
+        h = yf.Ticker("^COR1M").history(period="5d")
+        if h.empty:
+            return None
+        val = round(float(h["Close"].iloc[-1]), 1)
+        if not math.isfinite(val):
+            return None
+        if val < 15:
+            zone, zone_class = "LOW", "green"
+        elif val < 25:
+            zone, zone_class = "NORMAL", ""
+        elif val < 35:
+            zone, zone_class = "ELEVATED", "yellow"
+        else:
+            zone, zone_class = "HIGH", "red"
+        return {"value": val, "zone": zone, "zone_class": zone_class}
+    except Exception:
+        return None
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -208,6 +235,7 @@ def api_predict():
                 "adx": round(f.get("adx", 0), 1),
                 "williams_r": round(f.get("williams_r", 0), 1),
                 "cci": round(f.get("cci", 0), 1),
+                "cor1m": _get_cor1m(),
             },
             "levels": {
                 "high_20": round(high_20, 2),

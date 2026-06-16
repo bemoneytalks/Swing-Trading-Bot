@@ -2420,6 +2420,10 @@ async function loadPrediction() {
                         <span class="metric-label">Historical Vol (20d)</span>
                         <span class="metric-value">${c.hvol_20}</span>
                     </div>
+                    <div class="metric">
+                        <span class="metric-label">Implied Correlation (1M)</span>
+                        <span class="metric-value ${c.cor1m ? c.cor1m.zone_class : ''}">${c.cor1m ? c.cor1m.value + ' (' + c.cor1m.zone + ')' : 'N/A'}</span>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -5367,6 +5371,10 @@ async function loadNdxPrediction() {
                     <div class="metric">
                         <span class="metric-label">Historical Vol (20d)</span>
                         <span class="metric-value">${c.hvol_20}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Implied Correlation (1M)</span>
+                        <span class="metric-value ${c.cor1m ? c.cor1m.zone_class : ''}">${c.cor1m ? c.cor1m.value + ' (' + c.cor1m.zone + ')' : 'N/A'}</span>
                     </div>
                 </div>
 
