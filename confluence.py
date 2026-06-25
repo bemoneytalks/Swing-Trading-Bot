@@ -155,7 +155,7 @@ def _calculate_indicators(df):
     # --- 10. Trend Direction (price vs key MAs) ---
     sma200 = close.rolling(200).mean()
     d["sma200"] = float(sma200.iloc[-1]) if not np.isnan(sma200.iloc[-1]) else price
-    d["above_200sma"] = price > d["sma200"]
+    d["above_200sma"] = price >= d["sma200"]  # >= handles at-the-200-SMA boundary case
 
     # 50 SMA for trend context
     sma50 = close.rolling(50).mean()
@@ -168,10 +168,17 @@ def _calculate_indicators(df):
     d["rsi_recovery_bearish"] = bool(rsi_window.max() > 68) and float(rsi.iloc[-1]) < 50
 
     # Trend context flags (used by context-aware scoring)
-    d["confirmed_uptrend"]   = (d["above_200sma"] and d["above_50sma"]
-                                and d["adx_trending"] and d["adx_bull"])
-    d["confirmed_downtrend"] = (not d["above_200sma"] and not d["above_50sma"]
-                                and d["adx_trending"] and not d["adx_bull"])
+    # Uptrend: EMA bull stack substitutes for being above 200 SMA — handles cases where
+    # price has recovered to the 200 SMA level after a correction (e.g., NDX at all-time highs
+    # with price ≈ 200 SMA but EMA 9>21>50 clearly aligned bullish).
+    d["confirmed_uptrend"]   = (
+        (d["above_200sma"] or d["ema_bull_stack"]) and
+        d["above_50sma"] and d["adx_trending"] and d["adx_bull"]
+    )
+    d["confirmed_downtrend"] = (
+        not d["above_50sma"] and not d["above_200sma"]
+        and d["adx_trending"] and not d["adx_bull"]
+    )
 
     # Extra context
     d["change_1d"] = (price - d["prev_close"]) / d["prev_close"]
