@@ -6,9 +6,39 @@ Auto-calculates from yfinance options chains with manual Unusual Whales override
 
 import os
 import json
+import tempfile
 import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta
+
+
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _atomic_write_json(data, path):
+    """Write JSON atomically via temp file + os.replace() to bypass macOS iCloud
+    provenance restrictions and avoid os.getcwd() (EPERM in Launch Agent)."""
+    if not os.path.isabs(path):
+        path = os.path.join(_BASE_DIR, path)
+    dir_ = os.path.dirname(path)
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+    try:
+        os.close(fd)
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
 
 
 CACHE_FILE = os.path.join("cache", "net_premium.json")
@@ -32,11 +62,9 @@ def _load_history(index='SPX'):
 
 
 def _save_history(data, index='SPX'):
-    """Save premium history to disk."""
-    os.makedirs("cache", exist_ok=True)
+    """Save premium history to disk (atomic write to bypass iCloud provenance)."""
     cache_file = _get_cache_file(index)
-    with open(cache_file, "w") as f:
-        json.dump(data, f, indent=2)
+    _atomic_write_json(data, cache_file)
 
 
 def calculate_net_premium(index='SPX'):

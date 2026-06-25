@@ -5,7 +5,36 @@ Every trade logged here before entry. No written plan = no entry.
 
 import json
 import os
+import tempfile
 from datetime import datetime
+
+
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _atomic_write_json(data, path):
+    """Atomic JSON write via temp+rename — avoids os.getcwd() (EPERM in Launch Agent)."""
+    if not os.path.isabs(path):
+        path = os.path.join(_BASE_DIR, path)
+    dir_ = os.path.dirname(path) or _BASE_DIR
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+    try:
+        os.close(fd)
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2, default=str)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
 
 TRADE_LOG_PATH = "trade_log.json"
 
@@ -26,8 +55,7 @@ def save_trade_card(card):
 
     log.append(card)
 
-    with open(TRADE_LOG_PATH, "w") as f:
-        json.dump(log, f, indent=2, default=str)
+    _atomic_write_json(log, TRADE_LOG_PATH)
 
     return {"saved": True, "total_trades": len(log), "path": TRADE_LOG_PATH}
 
