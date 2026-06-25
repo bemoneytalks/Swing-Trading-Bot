@@ -5,6 +5,7 @@ Stores positions locally in portfolio.json
 
 import json
 import os
+import tempfile
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -33,10 +34,37 @@ def _load_portfolio():
         return {"positions": [], "closed": [], "account_size": 10000}
 
 
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _atomic_write_json(data, path):
+    """Atomic JSON write via temp+rename — avoids os.getcwd() (EPERM in Launch Agent)."""
+    if not os.path.isabs(path):
+        path = os.path.join(_BASE_DIR, path)
+    dir_ = os.path.dirname(path) or _BASE_DIR
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+    try:
+        os.close(fd)
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
+
+
 def _save_portfolio(data):
-    """Save portfolio to JSON file."""
-    with open(PORTFOLIO_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    """Save portfolio to JSON file (atomic write)."""
+    _atomic_write_json(data, PORTFOLIO_FILE)
 
 
 def add_position(symbol, entry_price, shares, position_type="long",

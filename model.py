@@ -1,7 +1,10 @@
 """ML model training and prediction for SPX/NDX opening window direction."""
 
 import os
+import tempfile
 import subprocess
+
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 import warnings
 import numpy as np
 import pandas as pd
@@ -18,15 +21,45 @@ warnings.filterwarnings("ignore")
 
 
 def _safe_remove(path):
-    """Delete a file so joblib can create a fresh one without inherited xattrs.
-    macOS com.apple.provenance cannot be stripped with xattr -c — the only reliable
-    fix is to remove the old file and let the writer create a new one.
-    """
+    """Delete a file so joblib can create a fresh one without inherited xattrs."""
     try:
         if os.path.exists(path):
             os.remove(path)
     except Exception:
         pass
+
+
+def _atomic_joblib_dump(obj, path):
+    """
+    Save a joblib object atomically via temp file + os.replace().
+
+    The project lives in iCloud Drive, which causes macOS to stamp every file
+    with com.apple.provenance.  Python.app (the Flask server) cannot overwrite
+    an existing file that carries this attribute (EPERM).  Writing to a fresh
+    temp file and renaming it bypasses the restriction because rename(2) does
+    not write to the destination inode — it only updates the directory entry.
+    """
+    # Resolve without os.getcwd() — fails in Launch Agent (iCloud Drive CWD)
+    if not os.path.isabs(path):
+        path = os.path.join(_BASE_DIR, path)
+    dir_ = os.path.dirname(path)
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+    try:
+        os.close(fd)
+        joblib.dump(obj, tmp)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
 
 
 def _get_index_config(index='SPX'):
@@ -163,13 +196,10 @@ def train_model(force_refresh_data=False, index='SPX'):
     for i, idx in enumerate(top_idx):
         print(f"  {i + 1:2d}. {feature_cols[idx]:<25s} {importances[idx]:.4f}")
 
-    # Save model artifacts (delete old files so macOS doesn't block with com.apple.provenance)
-    os.makedirs("model", exist_ok=True)
-    for path in [model_path, scaler_path, feature_path]:
-        _safe_remove(path)
-    joblib.dump(model, model_path)
-    joblib.dump(scaler, scaler_path)
-    joblib.dump(feature_cols, feature_path)
+    # Atomic saves — bypasses macOS iCloud provenance write restriction
+    _atomic_joblib_dump(model, model_path)
+    _atomic_joblib_dump(scaler, scaler_path)
+    _atomic_joblib_dump(feature_cols, feature_path)
     print(f"\n[MODEL] Saved to {model_path}")
 
     return model, scaler, feature_cols
@@ -251,12 +281,10 @@ def train_trend_model(force_refresh_data=False, index='SPX'):
     accuracy = accuracy_score(y_test, y_pred)
     print(f"[TREND] Test Accuracy: {accuracy:.1%}")
 
-    os.makedirs("model", exist_ok=True)
-    for path in [trend_model_path, trend_scaler_path, trend_feature_path]:
-        _safe_remove(path)
-    joblib.dump(model, trend_model_path)
-    joblib.dump(scaler, trend_scaler_path)
-    joblib.dump(feature_cols, trend_feature_path)
+    # Atomic saves — bypasses macOS iCloud provenance write restriction
+    _atomic_joblib_dump(model, trend_model_path)
+    _atomic_joblib_dump(scaler, trend_scaler_path)
+    _atomic_joblib_dump(feature_cols, trend_feature_path)
     print(f"[TREND] Saved to {trend_model_path}")
 
     return model, scaler, feature_cols

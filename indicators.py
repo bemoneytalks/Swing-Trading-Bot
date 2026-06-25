@@ -100,10 +100,20 @@ def _fetch_cross_asset_data(start_date, end_date):
     xa = pd.concat(frames.values(), axis=1)
     xa.index.name = "date"
 
-    # ---- Persist cache -----------------------------------------------------
+    # ---- Persist cache (atomic write to bypass macOS iCloud provenance) ----
     try:
-        os.makedirs(os.path.dirname(_CACHE_PATH), exist_ok=True)
-        xa.to_csv(_CACHE_PATH, index=True)
+        import tempfile
+        cache_dir = os.path.dirname(_CACHE_PATH)
+        os.makedirs(cache_dir, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=cache_dir, suffix=".tmp")
+        os.close(fd)
+        xa.to_csv(tmp, index=True)
+        try:
+            if os.path.exists(_CACHE_PATH):
+                os.remove(_CACHE_PATH)
+        except OSError:
+            pass
+        os.replace(tmp, _CACHE_PATH)
     except Exception as exc:
         print(f"[indicators] WARNING: could not write cross-asset cache: {exc}")
 
