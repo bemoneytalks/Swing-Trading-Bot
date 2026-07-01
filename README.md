@@ -47,6 +47,33 @@ On first load, both ML models will auto-train using 5 years of SPX daily data fr
 
 **macOS tip**: Double-click `start_dashboard.command` in Finder to start the server and auto-open the browser.
 
+### Windows
+
+The app is pure cross-platform Python and runs on Windows without any code changes. The steps are the same as above, with two differences:
+
+1. **Install [Python 3.9+](https://www.python.org/downloads/windows/)** — during setup, check **"Add python.exe to PATH"**.
+
+2. **Use `python` instead of `python3`** in every command (Command Prompt or PowerShell):
+
+   ```bat
+   git clone https://github.com/bemoneytalks/Swing-Trading-Bot.git
+   cd Swing-Trading-Bot
+   pip install flask yfinance pandas numpy scikit-learn ta scipy joblib
+   python app.py
+   ```
+
+Then open **http://localhost:5050** in your browser.
+
+**Windows tip**: To launch by double-click, create a file named `run.bat` in the project folder containing `python app.py` and pause on exit:
+
+```bat
+@echo off
+python app.py
+pause
+```
+
+> The macOS `start_dashboard.command` launcher and the `com.apple.provenance` file-permission notes elsewhere in this README are macOS-only — they do not apply on Windows and can be ignored.
+
 ## How It Works
 
 ### Confluence System (12 Indicators, Context-Aware)
