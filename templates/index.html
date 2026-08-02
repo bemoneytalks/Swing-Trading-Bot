@@ -1287,7 +1287,6 @@
         <button class="tab" onclick="loadPrediction()">ML Signal</button>
         <button class="tab" onclick="loadGex()">GEX</button>
         <button class="tab" onclick="loadBacktest()">Backtest</button>
-        <button class="tab" onclick="loadGrader()">Grader</button>
         <div style="margin-left:auto; display:flex; gap:6px; align-items:center; padding:4px 0;">
             <input type="text" id="symbol-input" placeholder="Any ticker (e.g. NVDA)"
                    style="width:140px; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#e6edf3; padding:6px 10px; font-size:12px;"
@@ -1330,26 +1329,6 @@
     </div>
 
     <div id="options-tab" class="tab-content">
-
-        <!-- ── Scaled Entry Checklist ───────────────────────────────── -->
-        <div class="checklist-panel">
-            <div class="checklist-header">
-                <div>
-                    <div class="checklist-title">Scaled Entry Checklist</div>
-                    <div class="checklist-meta">5-point trend confirmation — scores determine position size tier</div>
-                </div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <input type="text" id="checklist-symbol" value="SPX" placeholder="SPX / AAPL / QQQ"
-                        style="width:110px; background:#161b22; border:1px solid #30363d; border-radius:4px; color:#e6edf3; font-size:12px; padding:6px 8px; text-transform:uppercase;">
-                    <button class="btn primary" onclick="runChecklist()" id="checklist-btn">Run Checklist</button>
-                </div>
-            </div>
-            <div id="checklist-result" style="display:none;"></div>
-            <div id="checklist-loading" style="display:none; color:#484f58; font-size:12px; padding:8px 0;">
-                <div class="spinner" style="display:inline-block; width:14px; height:14px; margin-right:6px;"></div>
-                Fetching live data across all timeframes...
-            </div>
-        </div>
 
         <!-- ── Trade Card ──────────────────────────────────────────── -->
         <div class="trade-card-panel" id="trade-card-panel">
@@ -1465,6 +1444,23 @@
             </div>
         </div>
 
+        <!-- ── Options Contract Grader (A–F) ───────────────────────── -->
+        <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
+            <div class="exit-form-title">Options Contract Grader — A–F Swing Candidates</div>
+            <div style="font-size:11px; color:#7d8590; margin-bottom:10px;">Enter any optionable ticker. Direction comes from Trend Confluence; every 30&ndash;90 DTE contract is scored and the best pick per risk tier is graded A&ndash;F.</div>
+            <div class="exit-form-row">
+                <div class="exit-form-group">
+                    <label>Ticker</label>
+                    <input type="text" id="grader-symbol-input" placeholder="SPX, NVDA, AAPL..."
+                           style="width:140px;" onkeydown="if(event.key==='Enter')loadGrader()">
+                </div>
+                <button class="btn primary" onclick="loadGrader()" style="height:37px;">Grade Contracts</button>
+            </div>
+            <div id="grader-loading" class="loading" style="display:none;"></div>
+            <div id="grader-content" style="display:none; margin-top:16px;"></div>
+            <div id="grader-error" style="display:none; margin-top:16px;"></div>
+        </div>
+
         <!-- ── Contract Analyzer (existing) ────────────────────────── -->
         <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
             <div class="exit-form-title">Contract Analyzer — Run Probabilities on a Trade</div>
@@ -1536,6 +1532,26 @@
     </div>
 
     <div id="risk-tab" class="tab-content">
+        <!-- ── Scaled Entry Checklist ───────────────────────────────── -->
+        <div class="checklist-panel">
+            <div class="checklist-header">
+                <div>
+                    <div class="checklist-title">Scaled Entry Checklist</div>
+                    <div class="checklist-meta">5-point trend confirmation — scores determine position size tier</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="text" id="checklist-symbol" value="SPX" placeholder="SPX / AAPL / QQQ"
+                        style="width:110px; background:#161b22; border:1px solid #30363d; border-radius:4px; color:#e6edf3; font-size:12px; padding:6px 8px; text-transform:uppercase;">
+                    <button class="btn primary" onclick="runChecklist()" id="checklist-btn">Run Checklist</button>
+                </div>
+            </div>
+            <div id="checklist-result" style="display:none;"></div>
+            <div id="checklist-loading" style="display:none; color:#484f58; font-size:12px; padding:8px 0;">
+                <div class="spinner" style="display:inline-block; width:14px; height:14px; margin-right:6px;"></div>
+                Fetching live data across all timeframes...
+            </div>
+        </div>
+
         <div class="exit-form" style="margin-bottom:16px;">
             <div class="exit-form-title">Position Size Calculator</div>
             <div style="font-size:11px; color:#7d8590; margin-bottom:14px; line-height:1.7;">
@@ -1696,14 +1712,6 @@
         <div id="backtest-error" style="display:none;"></div>
     </div>
 
-    <div id="grader-tab" class="tab-content">
-        <div id="grader-loading" class="loading">
-            <div class="spinner"></div>
-            <div>Click "Grader" to grade option contracts</div>
-        </div>
-        <div id="grader-content" style="display:none;"></div>
-        <div id="grader-error" style="display:none;"></div>
-    </div>
 
     <!-- ══════════════════════════════════════════════════════
          NDX PARALLEL DASHBOARD
@@ -1893,7 +1901,7 @@ function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
 
-    const tabMap = { confluence: 0, ndx: 1, options: 2, risk: 3, scanner: 4, patterns: 5, signal: 6, gex: 7, backtest: 8, grader: 9 };
+    const tabMap = { confluence: 0, ndx: 1, options: 2, risk: 3, scanner: 4, patterns: 5, signal: 6, gex: 7, backtest: 8 };
     document.querySelectorAll('.tab')[tabMap[tab]].classList.add('active');
     document.getElementById(tab + '-tab').classList.add('active');
 }
@@ -2578,13 +2586,23 @@ function tierCard(name, t, borderColor, icon) {
 async function loadGrader(symbol) {
     let sym = (typeof symbol === 'string' && symbol) ? symbol : null;
     if (!sym) {
-        const inp = document.getElementById('symbol-input');
-        const v = inp ? inp.value.trim().toUpperCase() : '';
-        if (v) sym = v;
+        const own = document.getElementById('grader-symbol-input');
+        const v1 = own ? own.value.trim().toUpperCase() : '';
+        if (v1) sym = v1;
     }
-    switchTab('grader');
+    if (!sym) {
+        const inp = document.getElementById('symbol-input');
+        const v2 = inp ? inp.value.trim().toUpperCase() : '';
+        if (v2) sym = v2;
+    }
+    if (sym) {
+        const own = document.getElementById('grader-symbol-input');
+        if (own) own.value = sym;
+    }
+    switchTab('options');
     document.getElementById('grader-loading').style.display = 'block';
     document.getElementById('grader-loading').innerHTML = '<div class="spinner"></div><div>Grading ' + (sym || 'SPX') + ' option contracts (confluence + chain analysis)...</div>';
+    try { document.getElementById('grader-loading').scrollIntoView({block: 'center', behavior: 'smooth'}); } catch (e) {}
     document.getElementById('grader-content').style.display = 'none';
     document.getElementById('grader-error').style.display = 'none';
     setStatus('Grading option contracts...');
@@ -2604,6 +2622,12 @@ async function loadGrader(symbol) {
             : '';
 
         document.getElementById('grader-content').innerHTML = `
+            <div class="signal-card" style="margin-bottom:12px; padding:16px 24px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;">
+                <span style="font-size:30px; font-weight:800; letter-spacing:1px; color:#e6edf3;">${data.symbol}</span>
+                <span style="font-size:18px; font-weight:600; color:#7d8590;">$${data.spot.toLocaleString()}</span>
+                <span style="font-size:13px; font-weight:700; color:${dirColor}; border:1px solid ${dirColor}; border-radius:5px; padding:2px 12px;">${arrow} ${data.direction}</span>
+                <span style="font-size:11px; color:#484f58;">Option grades · ${data.dte_window[0]}&ndash;${data.dte_window[1]} DTE · ${data.timestamp}</span>
+            </div>
             <div style="display:grid; grid-template-columns: 1fr 1.6fr; gap:16px; margin-bottom:12px;">
                 <div class="card" style="padding:24px;">
                     <div style="font-size:10px; color:#7d8590; letter-spacing:1px; text-transform:uppercase;">Grader Recommendation</div>
