@@ -30,8 +30,7 @@ from indicators import add_all_features, get_feature_columns
 from gex import fetch_gex_data
 from confluence import analyze_ticker, analyze_ticker_with_confidence, analyze_exit, scan_watchlist, DEFAULT_WATCHLIST
 from options_analyzer import analyze_spx_options, analyze_contract
-from portfolio import (add_position, remove_position, get_portfolio_status,
-                       update_account_size, calculate_position_size)
+from portfolio import calculate_position_size
 from net_premium import (auto_update_today, get_premium_table, update_manual_premium,
                          fetch_net_premium_signal)
 from patterns import scan_universe, scan_patterns, PATTERN_REGISTRY
@@ -780,80 +779,6 @@ def api_options():
             result["live"] = live
 
         return jsonify(result)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
-
-
-@app.route("/api/portfolio")
-def api_portfolio():
-    try:
-        status = get_portfolio_status()
-        status["success"] = True
-        return jsonify(status)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
-
-
-@app.route("/api/portfolio/add", methods=["POST"])
-def api_portfolio_add():
-    try:
-        data = request.get_json() if request.is_json else {}
-        # Also support form/query params
-        if not data:
-            data = request.args.to_dict()
-
-        symbol = data.get("symbol", "").upper()
-        entry_price = float(data.get("entry_price", 0))
-        shares = float(data.get("shares", 0))
-        position_type = data.get("position_type", "long")
-        target_low = float(data["target_low"]) if data.get("target_low") else None
-        target_high = float(data["target_high"]) if data.get("target_high") else None
-        stop_loss = float(data["stop_loss"]) if data.get("stop_loss") else None
-        notes = data.get("notes", "")
-
-        if not symbol or entry_price <= 0 or shares <= 0:
-            return jsonify({"success": False, "error": "Symbol, entry price, and shares are required"})
-
-        pos = add_position(symbol, entry_price, shares, position_type,
-                          target_low, target_high, stop_loss, notes)
-        return jsonify({"success": True, "position": pos})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
-
-
-@app.route("/api/portfolio/remove", methods=["POST"])
-def api_portfolio_remove():
-    try:
-        data = request.get_json() if request.is_json else {}
-        if not data:
-            data = request.args.to_dict()
-
-        pos_id = data.get("id", "")
-        exit_price = float(data["exit_price"]) if data.get("exit_price") else None
-
-        if not pos_id:
-            return jsonify({"success": False, "error": "Position ID required"})
-
-        removed = remove_position(pos_id, exit_price)
-        if removed is None:
-            return jsonify({"success": False, "error": "Position not found"})
-        return jsonify({"success": True, "removed": removed})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
-
-
-@app.route("/api/portfolio/account", methods=["POST"])
-def api_portfolio_account():
-    try:
-        data = request.get_json() if request.is_json else {}
-        if not data:
-            data = request.args.to_dict()
-
-        size = float(data.get("size", 0))
-        if size <= 0:
-            return jsonify({"success": False, "error": "Account size must be positive"})
-        update_account_size(size)
-        return jsonify({"success": True, "account_size": size})
     except Exception as e:
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
 

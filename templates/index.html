@@ -1264,7 +1264,6 @@
         <button class="btn primary" onclick="loadConfluence()">SPX</button>
         <button class="btn" onclick="loadNdxDashboard()">NDX</button>
         <button class="btn" onclick="loadOptions()">Options</button>
-        <button class="btn" onclick="loadPortfolio()">Portfolio</button>
         <button class="btn" onclick="loadScan()">Scan Tickers</button>
         <button class="btn" onclick="loadGex()">GEX</button>
         <button class="btn" onclick="retrainModel()" id="trainBtn">Retrain</button>
@@ -1280,7 +1279,7 @@
         <button class="tab active" onclick="loadConfluence()">SPX</button>
         <button class="tab" onclick="loadNdxDashboard()" id="ndx-main-tab">NDX</button>
         <button class="tab" onclick="loadOptions()">Options</button>
-        <button class="tab" onclick="loadPortfolio()">Portfolio</button>
+        <button class="tab" onclick="switchTab('risk')">Risk Calc</button>
         <button class="tab" onclick="loadScan()">Scanner</button>
         <button class="tab" onclick="switchTab('patterns')">Patterns</button>
         <button class="tab" onclick="loadPrediction()">ML Signal</button>
@@ -1527,57 +1526,7 @@
         </div>
     </div>
 
-    <div id="portfolio-tab" class="tab-content">
-        <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
-            <div class="exit-form-title">Add Position</div>
-            <div class="exit-form-row">
-                <div class="exit-form-group">
-                    <label>Ticker</label>
-                    <input type="text" id="port-symbol" placeholder="PEP" style="width:80px;">
-                </div>
-                <div class="exit-form-group">
-                    <label>Type</label>
-                    <select id="port-type">
-                        <option value="long">Long</option>
-                        <option value="short">Short</option>
-                    </select>
-                </div>
-                <div class="exit-form-group">
-                    <label>Entry $</label>
-                    <input type="number" id="port-entry" placeholder="147.97" step="0.01" style="width:100px;">
-                </div>
-                <div class="exit-form-group">
-                    <label>Shares</label>
-                    <input type="number" id="port-shares" placeholder="300" step="1" style="width:80px;">
-                </div>
-                <div class="exit-form-group">
-                    <label>Target Low</label>
-                    <input type="number" id="port-target-low" placeholder="183" step="0.01" style="width:90px;">
-                </div>
-                <div class="exit-form-group">
-                    <label>Target High</label>
-                    <input type="number" id="port-target-high" placeholder="197" step="0.01" style="width:90px;">
-                </div>
-                <div class="exit-form-group">
-                    <label>Stop $</label>
-                    <input type="number" id="port-stop" placeholder="140" step="0.01" style="width:90px;">
-                </div>
-                <button class="btn primary" onclick="addPosition()" style="height:37px;">Add</button>
-            </div>
-            <div class="exit-form-row" style="margin-top:12px;">
-                <div class="exit-form-group">
-                    <label>Notes</label>
-                    <input type="text" id="port-notes" placeholder="e.g. long-term swing, targeting $183-197" style="width:400px;">
-                </div>
-                <div class="exit-form-group">
-                    <label>Account Size</label>
-                    <input type="number" id="port-account" placeholder="10000" step="100" style="width:120px;" value="10000">
-                </div>
-                <button class="btn" onclick="updateAccount()" style="height:37px;">Set Account</button>
-                <button class="btn" onclick="loadPortfolio()" style="height:37px;">Refresh</button>
-            </div>
-        </div>
-
+    <div id="risk-tab" class="tab-content">
         <div class="exit-form" style="margin-bottom:16px;">
             <div class="exit-form-title">Position Size Calculator</div>
             <div style="font-size:11px; color:#7d8590; margin-bottom:14px; line-height:1.7;">
@@ -1633,13 +1582,7 @@
             </div>
         </div>
 
-        <div id="portfolio-loading" class="loading">
-            <div class="spinner"></div>
-            <div>Click "Refresh" or add a position to view your portfolio</div>
-        </div>
-        <div id="portfolio-content" style="display:none;"></div>
-        <div id="portfolio-error" style="display:none;"></div>
-    </div>
+            </div>
 
     <div id="scanner-tab" class="tab-content">
         <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
@@ -1931,7 +1874,7 @@ function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
 
-    const tabMap = { confluence: 0, ndx: 1, options: 2, portfolio: 3, scanner: 4, patterns: 5, signal: 6, gex: 7, backtest: 8 };
+    const tabMap = { confluence: 0, ndx: 1, options: 2, risk: 3, scanner: 4, patterns: 5, signal: 6, gex: 7, backtest: 8 };
     document.querySelectorAll('.tab')[tabMap[tab]].classList.add('active');
     document.getElementById(tab + '-tab').classList.add('active');
 }
@@ -4414,93 +4357,7 @@ async function analyzeNdxContract() {
     }
 }
 
-// ===== PORTFOLIO TAB =====
-async function addPosition() {
-    const symbol = document.getElementById('port-symbol').value.trim();
-    const entryPrice = document.getElementById('port-entry').value;
-    const shares = document.getElementById('port-shares').value;
-    const posType = document.getElementById('port-type').value;
-    const targetLow = document.getElementById('port-target-low').value;
-    const targetHigh = document.getElementById('port-target-high').value;
-    const stopLoss = document.getElementById('port-stop').value;
-    const notes = document.getElementById('port-notes').value;
-
-    if (!symbol || !entryPrice || !shares) {
-        alert('Ticker, Entry Price, and Shares are required.');
-        return;
-    }
-
-    try {
-        const body = {
-            symbol: symbol,
-            entry_price: parseFloat(entryPrice),
-            shares: parseFloat(shares),
-            position_type: posType,
-            notes: notes,
-        };
-        if (targetLow) body.target_low = parseFloat(targetLow);
-        if (targetHigh) body.target_high = parseFloat(targetHigh);
-        if (stopLoss) body.stop_loss = parseFloat(stopLoss);
-
-        const res = await fetch('/api/portfolio/add', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error);
-
-        // Clear form
-        document.getElementById('port-symbol').value = '';
-        document.getElementById('port-entry').value = '';
-        document.getElementById('port-shares').value = '';
-        document.getElementById('port-target-low').value = '';
-        document.getElementById('port-target-high').value = '';
-        document.getElementById('port-stop').value = '';
-        document.getElementById('port-notes').value = '';
-
-        setStatus('Added ' + symbol + ' position');
-        loadPortfolio();
-    } catch (err) {
-        alert('Error adding position: ' + err.message);
-    }
-}
-
-async function removePosition(posId) {
-    if (!confirm('Close this position?')) return;
-    try {
-        const res = await fetch('/api/portfolio/remove', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({id: posId}),
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error);
-        setStatus('Position closed');
-        loadPortfolio();
-    } catch (err) {
-        alert('Error: ' + err.message);
-    }
-}
-
-async function updateAccount() {
-    const size = document.getElementById('port-account').value;
-    if (!size) return;
-    try {
-        const res = await fetch('/api/portfolio/account', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({size: parseFloat(size)}),
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error);
-        setStatus('Account set to $' + parseFloat(size).toLocaleString());
-        loadPortfolio();
-    } catch (err) {
-        alert('Error: ' + err.message);
-    }
-}
-
+// ===== RISK CALCULATOR =====
 async function calcRisk() {
     const account = document.getElementById('rc-account').value;
     const entry = document.getElementById('rc-entry').value;
@@ -5691,141 +5548,6 @@ async function loadNdxBacktest() {
 // END NDX DASHBOARD
 // ═══════════════════════════════════════════════════════════════════
 
-async function loadPortfolio() {
-    switchTab('portfolio');
-    document.getElementById('portfolio-loading').style.display = 'block';
-    document.getElementById('portfolio-loading').innerHTML = '<div class="spinner"></div><div>Loading portfolio...</div>';
-    document.getElementById('portfolio-content').style.display = 'none';
-    document.getElementById('portfolio-error').style.display = 'none';
-    setStatus('Loading portfolio...');
-
-    try {
-        const res = await fetch('/api/portfolio');
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error);
-
-        // Alerts banner
-        let alertsHtml = '';
-        if (data.alerts.length > 0) {
-            alertsHtml = '<div class="signal-card" style="border:2px solid #da3633; margin-bottom:16px;">'
-                + '<div style="font-size:14px; font-weight:700; color:#ff7b72; margin-bottom:8px;">&#x26A0; Active Alerts</div>';
-            data.alerts.forEach(function(a) {
-                const urgColor = a.urgency === 'critical' ? '#ff7b72' : a.urgency === 'high' ? '#d29922' : '#7d8590';
-                alertsHtml += '<div style="padding:4px 0; font-size:12px; color:' + urgColor + ';">'
-                    + '<strong>' + a.type + '</strong> — ' + a.message + '</div>';
-            });
-            alertsHtml += '</div>';
-        }
-
-        // Account summary
-        const s = data.summary;
-        const a = data.account;
-        const totalPnlColor = s.total_pnl >= 0 ? '#3fb950' : '#ff7b72';
-        const totalPnlSign = s.total_pnl >= 0 ? '+' : '';
-
-        let summaryHtml = '<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; margin-bottom:16px;">'
-            + '<div class="card" style="text-align:center; padding:16px;">'
-            + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Account</div>'
-            + '<div style="font-size:18px; font-weight:700; color:#e6edf3;">$' + a.size.toLocaleString() + '</div>'
-            + '</div>'
-            + '<div class="card" style="text-align:center; padding:16px;">'
-            + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Invested</div>'
-            + '<div style="font-size:18px; font-weight:700; color:#e6edf3;">$' + s.total_invested.toLocaleString() + '</div>'
-            + '<div style="font-size:11px; color:#484f58;">' + a.exposure_pct + '% exposure</div>'
-            + '</div>'
-            + '<div class="card" style="text-align:center; padding:16px;">'
-            + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Current Value</div>'
-            + '<div style="font-size:18px; font-weight:700; color:#e6edf3;">$' + s.total_current.toLocaleString() + '</div>'
-            + '</div>'
-            + '<div class="card" style="text-align:center; padding:16px;">'
-            + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Total P&L</div>'
-            + '<div style="font-size:18px; font-weight:700; color:' + totalPnlColor + ';">' + totalPnlSign + '$' + Math.abs(s.total_pnl).toLocaleString(undefined, {minimumFractionDigits:2}) + '</div>'
-            + '<div style="font-size:11px; color:' + totalPnlColor + ';">' + totalPnlSign + s.total_pnl_pct + '%</div>'
-            + '</div>'
-            + '<div class="card" style="text-align:center; padding:16px;">'
-            + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Available</div>'
-            + '<div style="font-size:18px; font-weight:700; color:#e6edf3;">$' + a.available.toLocaleString() + '</div>'
-            + '</div>'
-            + '</div>';
-
-        // Position rows
-        let posHtml = '';
-        if (data.positions.length === 0) {
-            posHtml = '<div style="text-align:center; padding:40px; color:#484f58;">No open positions. Add one above.</div>';
-        } else {
-            data.positions.forEach(function(p) {
-                const pnlColor = p.pnl >= 0 ? '#3fb950' : '#ff7b72';
-                const pnlSign = p.pnl >= 0 ? '+' : '';
-                const dayColor = p.day_change >= 0 ? '#3fb950' : '#ff7b72';
-                const daySign = p.day_change >= 0 ? '+' : '';
-                const progressColor = p.progress >= 100 ? '#3fb950' : p.progress >= 50 ? '#d29922' : p.progress < 0 ? '#ff7b72' : '#484f58';
-                const progressWidth = Math.max(0, Math.min(100, p.progress));
-
-                let exitBadge = '';
-                if (p.exit_analysis) {
-                    const ec = p.exit_analysis.exit_class;
-                    const eColor = ec === 'exit-now' ? '#ff7b72' : ec === 'exit-position' ? '#f47067' :
-                                   ec === 'tighten-stop' ? '#d29922' : '#3fb950';
-                    exitBadge = '<span style="font-size:9px; font-weight:700; padding:2px 8px; border-radius:3px; background:' + eColor + '22; color:' + eColor + ';">'
-                        + p.exit_analysis.exit_signal + '</span>';
-                }
-
-                posHtml += '<div class="card" style="margin-bottom:12px; padding:20px;">'
-                    + '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">'
-                    + '<div>'
-                    + '<span style="font-size:18px; font-weight:700; color:#e6edf3;">' + p.symbol + '</span>'
-                    + ' <span style="font-size:11px; color:#7d8590; text-transform:uppercase;">' + p.position_type + '</span> '
-                    + exitBadge
-                    + '<div style="font-size:11px; color:#484f58; margin-top:2px;">' + p.shares + ' shares | Entry: $' + p.entry_price.toLocaleString() + ' | ' + p.days_held + ' days held</div>'
-                    + (p.notes ? '<div style="font-size:11px; color:#7d8590; margin-top:2px; font-style:italic;">' + p.notes + '</div>' : '')
-                    + '</div>'
-                    + '<button class="btn" onclick="removePosition(\'' + p.id + '\')" style="font-size:11px; padding:4px 12px;">Close</button>'
-                    + '</div>'
-                    + '<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:16px; text-align:center;">'
-                    + '<div>'
-                    + '<div style="font-size:10px; color:#7d8590;">Current</div>'
-                    + '<div style="font-size:16px; font-weight:600; color:#e6edf3;">$' + p.current_price.toLocaleString() + '</div>'
-                    + '<div style="font-size:11px; color:' + dayColor + ';">' + daySign + p.day_change.toFixed(2) + ' (' + daySign + p.day_change_pct.toFixed(2) + '%)</div>'
-                    + '</div>'
-                    + '<div>'
-                    + '<div style="font-size:10px; color:#7d8590;">P&L</div>'
-                    + '<div style="font-size:16px; font-weight:600; color:' + pnlColor + ';">' + pnlSign + '$' + Math.abs(p.pnl).toLocaleString(undefined, {minimumFractionDigits:2}) + '</div>'
-                    + '<div style="font-size:11px; color:' + pnlColor + ';">' + pnlSign + p.pnl_pct.toFixed(2) + '%</div>'
-                    + '</div>'
-                    + '<div>'
-                    + '<div style="font-size:10px; color:#ff7b72;">Stop</div>'
-                    + '<div style="font-size:14px; font-weight:600; color:#ff7b72;">$' + p.stop_loss.toLocaleString() + '</div>'
-                    + '</div>'
-                    + '<div>'
-                    + '<div style="font-size:10px; color:#3fb950;">Target</div>'
-                    + '<div style="font-size:14px; font-weight:600; color:#3fb950;">$' + p.target_low.toLocaleString() + ' – $' + p.target_high.toLocaleString() + '</div>'
-                    + '</div>'
-                    + '</div>'
-                    + '<div style="margin-top:12px;">'
-                    + '<div style="display:flex; justify-content:space-between; font-size:10px; color:#484f58; margin-bottom:4px;">'
-                    + '<span>Stop $' + p.stop_loss.toLocaleString() + '</span>'
-                    + '<span>Progress: ' + p.progress.toFixed(0) + '%</span>'
-                    + '<span>Target $' + p.target_high.toLocaleString() + '</span>'
-                    + '</div>'
-                    + '<div style="height:6px; background:#21262d; border-radius:3px; overflow:hidden;">'
-                    + '<div style="height:100%; width:' + progressWidth + '%; background:' + progressColor + '; border-radius:3px; transition:width 0.5s;"></div>'
-                    + '</div>'
-                    + '</div>'
-                    + '</div>';
-            });
-        }
-
-        document.getElementById('portfolio-content').innerHTML = alertsHtml + summaryHtml + posHtml;
-        document.getElementById('portfolio-loading').style.display = 'none';
-        document.getElementById('portfolio-content').style.display = 'block';
-        setStatus('Portfolio: ' + data.positions.length + ' positions | ' + totalPnlSign + '$' + Math.abs(s.total_pnl).toFixed(2));
-    } catch (err) {
-        document.getElementById('portfolio-loading').style.display = 'none';
-        document.getElementById('portfolio-error').style.display = 'block';
-        document.getElementById('portfolio-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
-        setStatus('Error loading portfolio');
-    }
-}
 </script>
 
 </body>
