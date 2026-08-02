@@ -1351,9 +1351,12 @@ def analyze_ticker(symbol, include_reversal=False):
         gex_sig = None
         try:
             from gex import get_gex_signal
-            # Use NDX GEX for NDX symbols, SPX for everything else
+            # Use the ticker's own chain for custom symbols; NDX GEX for NDX
+            # symbols; SPX for the index default
             gex_index = 'NDX' if symbol in ('^NDX', 'QQQ') else 'SPX'
-            gex_sig = get_gex_signal(index=gex_index)
+            custom_gex = symbol if symbol not in (
+                '^GSPC', '^SPX', '^NDX', 'QQQ', 'SPX', 'NDX') else None
+            gex_sig = get_gex_signal(index=gex_index, symbol=custom_gex)
         except Exception:
             pass
 

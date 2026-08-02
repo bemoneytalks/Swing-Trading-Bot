@@ -285,9 +285,14 @@ def fetch_crude_correlation():
 
 # ─── 3. Dealer Positioning ───────────────────────────────────────────
 
-def fetch_dealer_positioning(index='SPX'):
-    """Analyze dealer positioning via GEX and options flow data."""
-    cache_key = f"dealer_positioning_{index}"
+def fetch_dealer_positioning(index='SPX', symbol=None):
+    """Analyze dealer positioning via GEX and options flow data.
+
+    Pass ``symbol`` to analyze a custom ticker's own chain: dealer gamma and
+    put/call ratios come from that ticker; IV rank / skew stay None (they
+    need the index HV model).
+    """
+    cache_key = f"dealer_positioning_{symbol or index}"
     cached = _get_cached(cache_key)
     if cached is not None:
         return cached
@@ -303,26 +308,47 @@ def fetch_dealer_positioning(index='SPX'):
         "warning": None,
     }
 
-    # Fetch GEX data
+    # Fetch GEX data (per-ticker when symbol given)
     try:
         from gex import fetch_gex_data
-        gex_data = fetch_gex_data(index=index)
+        gex_data = fetch_gex_data(index=index, symbol=symbol)
         result["dealer_position"] = gex_data.get("dealer_position", "UNKNOWN")
         result["total_gex"] = gex_data.get("total_gex", 0)
+        result["symbol"] = symbol or index
     except Exception:
         pass
 
     # Fetch options data for put/call ratios and IV
-    try:
-        from options_analyzer import analyze_spx_options
-        opts = analyze_spx_options(index=index)
-        if opts:
-            result["pc_volume_ratio"] = opts.get("pc_volume_ratio")
-            result["pc_oi_ratio"] = opts.get("pc_oi_ratio")
-            result["iv_rank"] = opts.get("iv_rank")
-            result["skew_ratio"] = opts.get("skew", {}).get("ratio") if isinstance(opts.get("skew"), dict) else None
-    except Exception:
-        pass
+    if symbol:
+        # Custom ticker: put/call ratios from its own chain (shared cache)
+        try:
+            from chain_service import get_chain
+            chain = get_chain(symbol, max_dte=45)
+            cv = pv = coi = poi = 0
+            for v in chain["expirations"].values():
+                for row in v["calls"]:
+                    cv += int(row.get("volume") or 0)
+                    coi += int(row.get("openInterest") or 0)
+                for row in v["puts"]:
+                    pv += int(row.get("volume") or 0)
+                    poi += int(row.get("openInterest") or 0)
+            if cv > 0:
+                result["pc_volume_ratio"] = round(pv / cv, 2)
+            if coi > 0:
+                result["pc_oi_ratio"] = round(poi / coi, 2)
+        except Exception:
+            pass
+    else:
+        try:
+            from options_analyzer import analyze_spx_options
+            opts = analyze_spx_options(index=index)
+            if opts:
+                result["pc_volume_ratio"] = opts.get("pc_volume_ratio")
+                result["pc_oi_ratio"] = opts.get("pc_oi_ratio")
+                result["iv_rank"] = opts.get("iv_rank")
+                result["skew_ratio"] = opts.get("skew", {}).get("ratio") if isinstance(opts.get("skew"), dict) else None
+        except Exception:
+            pass
 
     # Score dealer positioning
     bearish_signals = 0
@@ -574,10 +600,10 @@ def assess_confidence(confluence_result, index='SPX'):
     except Exception:
         net_prem = {"signal": 0, "label": "Unavailable", "detail": "Could not load net premium data"}
 
-    # Import GEX regime signal
+    # Import GEX regime signal (per-ticker for custom symbols)
     try:
         from gex import get_gex_signal
-        gex_sig = get_gex_signal(index=index)
+        gex_sig = get_gex_signal(index=index, symbol=custom_symbol)
     except Exception:
         gex_sig = {"signal": 0, "label": "Unavailable", "regime": "UNKNOWN"}
 
@@ -589,7 +615,7 @@ def assess_confidence(confluence_result, index='SPX'):
         # No signal fired — still provide indicator data but grade is N/A
         news = fetch_news_sentiment(symbol=news_symbol)
         crude = fetch_crude_correlation()
-        positioning = fetch_dealer_positioning(index=index)
+        positioning = fetch_dealer_positioning(index=index, symbol=custom_symbol)
         mtf = fetch_multi_timeframe_signals(index=index, symbol=custom_symbol)
         return _sanitize({
             "grade": "N/A",
@@ -611,7 +637,7 @@ def assess_confidence(confluence_result, index='SPX'):
     # Fetch all leading indicators
     news = fetch_news_sentiment(symbol=news_symbol)
     crude = fetch_crude_correlation()
-    positioning = fetch_dealer_positioning(index=index)
+    positioning = fetch_dealer_positioning(index=index, symbol=custom_symbol)
     mtf = fetch_multi_timeframe_signals(index=index, symbol=custom_symbol)
 
     # Count conflicts

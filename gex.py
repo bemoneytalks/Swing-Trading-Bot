@@ -42,6 +42,37 @@ def black_scholes_gamma(S, K, T, r, sigma):
         return 0.0
 
 
+def black_scholes_delta(S, K, T, r, sigma, option_type="call"):
+    """Black-Scholes delta. Calls in [0,1], puts in [-1,0]."""
+    if T <= 0 or sigma <= 0:
+        if option_type == "call":
+            return 1.0 if S > K else 0.0
+        return -1.0 if S < K else 0.0
+    try:
+        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+        if option_type == "call":
+            return float(norm.cdf(d1))
+        return float(norm.cdf(d1) - 1.0)
+    except (ValueError, ZeroDivisionError):
+        return 0.0
+
+
+def black_scholes_vanna(S, K, T, r, sigma):
+    """Black-Scholes vanna: dDelta/dVol (same for calls and puts).
+
+    Expressed per 1.00 change in volatility; callers scale to per-1%.
+    """
+    if T <= 0 or sigma <= 0:
+        return 0.0
+    try:
+        sqrt_t = math.sqrt(T)
+        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt_t)
+        d2 = d1 - sigma * sqrt_t
+        return float(-norm.pdf(d1) * d2 / sigma)
+    except (ValueError, ZeroDivisionError):
+        return 0.0
+
+
 def implied_vol_from_price(S, K, T, r, market_price, option_type="call"):
     """Simple bisection IV solver."""
     if market_price <= 0 or T <= 0:
@@ -70,15 +101,22 @@ def bs_price(S, K, T, r, sigma, option_type="call"):
         return K * math.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
 
 
-def fetch_gex_data(index='SPX'):
+def fetch_gex_data(index='SPX', symbol=None):
     """
-    Fetch options data and calculate gamma exposure by strike.
+    Fetch options data and calculate gamma/vanna/delta exposure by strike.
 
     For index='NDX': uses QQQ options (more liquid), scaled to NDX levels.
     For index='SPX': uses SPX/^SPX options directly.
+    Pass ``symbol`` (e.g. "NVDA") to analyze any optionable ticker's own
+    chain via the shared chain service.
 
     Returns dict with GEX analysis results.
     """
+    if symbol and symbol.upper() not in ('SPX', '^SPX', '^GSPC', 'NDX', '^NDX'):
+        return _fetch_gex_symbol(symbol.upper())
+    if symbol and symbol.upper() in ('NDX', '^NDX'):
+        index = 'NDX'
+
     if index == 'NDX':
         return _fetch_gex_ndx()
 
@@ -124,6 +162,21 @@ def fetch_gex_data(index='SPX'):
     return _calculate_gex(ticker, spot, target_expirations, now)
 
 
+def _fetch_gex_symbol(symbol):
+    """Any-ticker GEX/VEX/DEX using the symbol's own options chain
+    (served from the shared 30-minute chain cache)."""
+    from chain_service import get_frames
+    spot, frames = get_frames(symbol, max_dte=45)
+    if not frames:
+        raise RuntimeError(f"No options data for {symbol}")
+    now = datetime.now()
+    expirations = sorted(frames.keys())
+    result = _calculate_gex(None, spot, expirations, now, frames=frames)
+    result["data_source"] = f"{symbol} options chain"
+    result["symbol"] = symbol
+    return result
+
+
 def _fetch_gex_ndx():
     """NDX GEX via QQQ options (more liquid), scaled to NDX."""
     # Get NDX spot
@@ -166,7 +219,14 @@ def _fetch_gex_ndx():
         s["call_gex"] = round(s["call_gex"] * scale_factor, 0)
         s["put_gex"] = round(s["put_gex"] * scale_factor, 0)
         s["net_gex"] = round(s["net_gex"] * scale_factor, 0)
+        s["net_vex"] = round(s.get("net_vex", 0) * scale_factor, 0)
+        s["net_dex"] = round(s.get("net_dex", 0) * scale_factor, 0)
     result["total_gex"] = round(result["total_gex"] * scale_factor, 0)
+    result["total_vex"] = round(result.get("total_vex", 0) * scale_factor, 0)
+    result["total_dex"] = round(result.get("total_dex", 0) * scale_factor, 0)
+    for wall_key in ("call_wall", "put_wall", "dex_magnet"):
+        if result.get(wall_key):
+            result[wall_key] = round(result[wall_key] * scale_factor, 0)
     if result["gex_flip"]:
         result["gex_flip"] = round(result["gex_flip"] * scale_factor, 2)
     if result["gamma_resistance"]:
@@ -219,8 +279,15 @@ def _fetch_gex_via_spy(spx_spot):
         s["call_gex"] = s["call_gex"] * scale_factor
         s["put_gex"] = s["put_gex"] * scale_factor
         s["net_gex"] = s["net_gex"] * scale_factor
+        s["net_vex"] = s.get("net_vex", 0) * scale_factor
+        s["net_dex"] = s.get("net_dex", 0) * scale_factor
         scaled_strikes.append(s)
     result["strikes_data"] = scaled_strikes
+    result["total_vex"] = result.get("total_vex", 0) * scale_factor
+    result["total_dex"] = result.get("total_dex", 0) * scale_factor
+    for wall_key in ("call_wall", "put_wall", "dex_magnet"):
+        if result.get(wall_key):
+            result[wall_key] = round(result[wall_key] * scale_factor, 0)
 
     if result["gex_flip"]:
         result["gex_flip"] = round(result["gex_flip"] * scale_factor, 0)
@@ -239,23 +306,38 @@ def _fetch_gex_via_spy(spx_spot):
     return result
 
 
-def _calculate_gex(ticker, spot, expirations, now):
-    """Core GEX calculation across expirations."""
-    all_strikes = {}  # strike -> {call_gex, put_gex}
+def _new_strike():
+    return {"call_gex": 0, "put_gex": 0, "call_vex": 0, "put_vex": 0,
+            "call_dex": 0, "put_dex": 0}
+
+
+def _calculate_gex(ticker, spot, expirations, now, frames=None):
+    """Core GEX/VEX/DEX calculation across expirations.
+
+    ``frames`` (optional): pre-fetched chain data from chain_service in the
+    form {exp_str: {"calls": df, "puts": df}}. When omitted, chains are
+    fetched from the ticker directly (original behavior).
+    """
+    all_strikes = {}  # strike -> {call/put gex, vex, dex}
     per_expiry = {}   # exp_str -> {net_gex, call_gex, put_gex, dte, top_strike, dealer_position}
 
     for exp_str in expirations:
-        try:
-            chain = ticker.option_chain(exp_str)
-        except Exception:
-            continue
+        if frames is not None:
+            if exp_str not in frames:
+                continue
+            calls = frames[exp_str]["calls"]
+            puts = frames[exp_str]["puts"]
+        else:
+            try:
+                chain = ticker.option_chain(exp_str)
+            except Exception:
+                continue
+            calls = chain.calls
+            puts = chain.puts
 
         exp_date = datetime.strptime(exp_str, "%Y-%m-%d")
         dte = (exp_date - now).days
         T = max(dte / 365.0, 1 / 365.0)
-
-        calls = chain.calls
-        puts = chain.puts
 
         # Filter to strikes within reasonable range (80% - 120% of spot)
         strike_low = spot * 0.85
@@ -294,9 +376,19 @@ def _calculate_gex(ticker, spot, expirations, now):
             call_gex = gamma * oi * CONTRACT_MULT * spot
             exp_call_gex += call_gex
 
+            # VEX: vanna * OI, dollar-scaled per 1% IV move (same dealer
+            # sign convention as GEX: calls positive). DEX: delta * OI,
+            # dollar notional of the hedge.
+            vanna = black_scholes_vanna(spot, K, T, RISK_FREE_RATE, iv)
+            call_vex = vanna * oi * CONTRACT_MULT * spot * 0.01
+            delta = black_scholes_delta(spot, K, T, RISK_FREE_RATE, iv, "call")
+            call_dex = delta * oi * CONTRACT_MULT * spot
+
             if K not in all_strikes:
-                all_strikes[K] = {"call_gex": 0, "put_gex": 0}
+                all_strikes[K] = _new_strike()
             all_strikes[K]["call_gex"] += call_gex
+            all_strikes[K]["call_vex"] += call_vex
+            all_strikes[K]["call_dex"] += call_dex
 
             if K not in exp_strikes:
                 exp_strikes[K] = 0
@@ -329,9 +421,16 @@ def _calculate_gex(ticker, spot, expirations, now):
             put_gex = -gamma * oi * CONTRACT_MULT * spot
             exp_put_gex += put_gex
 
+            vanna = black_scholes_vanna(spot, K, T, RISK_FREE_RATE, iv)
+            put_vex = -vanna * oi * CONTRACT_MULT * spot * 0.01
+            delta = black_scholes_delta(spot, K, T, RISK_FREE_RATE, iv, "put")
+            put_dex = delta * oi * CONTRACT_MULT * spot
+
             if K not in all_strikes:
-                all_strikes[K] = {"call_gex": 0, "put_gex": 0}
+                all_strikes[K] = _new_strike()
             all_strikes[K]["put_gex"] += put_gex
+            all_strikes[K]["put_vex"] += put_vex
+            all_strikes[K]["put_dex"] += put_dex
 
             if K not in exp_strikes:
                 exp_strikes[K] = 0
@@ -367,10 +466,20 @@ def _calculate_gex(ticker, spot, expirations, now):
             "call_gex": round(d["call_gex"], 0),
             "put_gex": round(d["put_gex"], 0),
             "net_gex": round(net, 0),
+            "net_vex": round(d["call_vex"] + d["put_vex"], 0),
+            "net_dex": round(d["call_dex"] + d["put_dex"], 0),
         })
 
-    # Total GEX
+    # Totals
     total_gex = sum(s["net_gex"] for s in strikes_data)
+    total_vex = sum(s["net_vex"] for s in strikes_data)
+    total_dex = sum(s["net_dex"] for s in strikes_data)
+
+    # Walls: largest call-gamma strike (resistance magnet) and most negative
+    # put-gamma strike (support magnet), plus largest |DEX| concentration
+    call_wall = max(all_strikes, key=lambda k: all_strikes[k]["call_gex"]) if all_strikes else None
+    put_wall = min(all_strikes, key=lambda k: all_strikes[k]["put_gex"]) if all_strikes else None
+    dex_magnet = max(strikes_data, key=lambda s: abs(s["net_dex"]))["strike"] if strikes_data else None
 
     # Find GEX flip level (where cumulative GEX crosses zero from positive to negative)
     gex_flip = None
@@ -425,6 +534,11 @@ def _calculate_gex(ticker, spot, expirations, now):
     return {
         "spot": round(spot, 2),
         "total_gex": round(total_gex, 0),
+        "total_vex": round(total_vex, 0),
+        "total_dex": round(total_dex, 0),
+        "call_wall": call_wall,
+        "put_wall": put_wall,
+        "dex_magnet": dex_magnet,
         "gex_flip": round(gex_flip, 2) if gex_flip else None,
         "dealer_position": dealer_position,
         "dealer_implication": dealer_implication,
@@ -442,7 +556,7 @@ def _calculate_gex(ticker, spot, expirations, now):
     }
 
 
-def get_gex_signal(index='SPX'):
+def get_gex_signal(index='SPX', symbol=None):
     """
     Return a lightweight GEX signal for the confluence system.
     Caches the result for 30 minutes to avoid full options chain re-fetch.
@@ -456,7 +570,8 @@ def get_gex_signal(index='SPX'):
       flip_event  : bool — did the regime change since last check?
       flip_direction : 'LONG' | 'SHORT' | None
     """
-    cache_path = os.path.join("cache", f"gex_signal_{index.lower()}.json")
+    cache_name = (symbol or index).lower().replace("^", "idx_")
+    cache_path = os.path.join("cache", f"gex_signal_{cache_name}.json")
 
     # Return cached result if fresh (< 30 min)
     if os.path.exists(cache_path):
@@ -475,7 +590,7 @@ def get_gex_signal(index='SPX'):
 
     # Fetch fresh GEX data
     try:
-        gex = fetch_gex_data(index=index)
+        gex = fetch_gex_data(index=index, symbol=symbol)
         total_gex  = float(gex["total_gex"])
         flip_level = float(gex["gex_flip"]) if gex.get("gex_flip") is not None else None
         spot       = gex["spot"]
@@ -501,6 +616,11 @@ def get_gex_signal(index='SPX'):
             "above_flip":     above_flip,
             "flip_event":     flip_event,
             "flip_direction": flip_direction,
+            "call_wall":      gex.get("call_wall"),
+            "put_wall":       gex.get("put_wall"),
+            "total_vex":      gex.get("total_vex", 0),
+            "vanna_bias":     "SUPPORTIVE" if gex.get("total_vex", 0) > 0 else "FRAGILE",
+            "symbol":         symbol or index,
             "fetched_at":     datetime.now().isoformat(),
         }
 

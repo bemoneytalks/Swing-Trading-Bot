@@ -342,25 +342,39 @@ def api_train():
 def api_gex():
     try:
         index = _get_index()
-        data = fetch_gex_data(index=index)
+        symbol = _get_symbol()
+        custom_symbol = symbol if symbol not in (None, '^GSPC', '^NDX') else None
+        if symbol == '^NDX':
+            index = 'NDX'
+        data = fetch_gex_data(index=index, symbol=custom_symbol)
 
         # Build the chart data (top 20 strikes around spot for the bar chart)
         spot = data["spot"]
         strikes = data["strikes_data"]
-        # Filter to strikes near spot and sort by absolute GEX
-        near_spot = [s for s in strikes if abs(s["strike"] - spot) / spot < 0.05]
+        # Filter to strikes near spot (±8%), capped to the 44 rows nearest spot
+        near_spot = [s for s in strikes if abs(s["strike"] - spot) / spot < 0.08]
+        near_spot.sort(key=lambda s: abs(s["strike"] - spot))
+        near_spot = near_spot[:44]
         near_spot.sort(key=lambda s: s["strike"])
 
         chart_strikes = [s["strike"] for s in near_spot]
         chart_call_gex = [s["call_gex"] for s in near_spot]
         chart_put_gex = [s["put_gex"] for s in near_spot]
         chart_net_gex = [s["net_gex"] for s in near_spot]
+        chart_net_vex = [s.get("net_vex", 0) for s in near_spot]
+        chart_net_dex = [s.get("net_dex", 0) for s in near_spot]
 
         return jsonify({
             "success": True,
             "index": index,
+            "symbol": custom_symbol or index,
             "spot": data["spot"],
             "total_gex": data["total_gex"],
+            "total_vex": data.get("total_vex", 0),
+            "total_dex": data.get("total_dex", 0),
+            "call_wall": data.get("call_wall"),
+            "put_wall": data.get("put_wall"),
+            "dex_magnet": data.get("dex_magnet"),
             "gex_flip": data["gex_flip"],
             "dealer_position": data["dealer_position"],
             "dealer_implication": data["dealer_implication"],
@@ -372,6 +386,8 @@ def api_gex():
             "chart_call_gex": chart_call_gex,
             "chart_put_gex": chart_put_gex,
             "chart_net_gex": chart_net_gex,
+            "chart_net_vex": chart_net_vex,
+            "chart_net_dex": chart_net_dex,
             "per_expiry": data["per_expiry"],
             "expirations_used": data["expirations_used"],
             "data_source": data["data_source"],
@@ -523,6 +539,10 @@ def api_confluence():
                 "total_gex": gex.get("total_gex", 0),
                 "flip_level": gex.get("flip_level"),
                 "above_flip": gex.get("above_flip", False),
+                "call_wall": gex.get("call_wall"),
+                "put_wall": gex.get("put_wall"),
+                "vanna_bias": gex.get("vanna_bias"),
+                "symbol": gex.get("symbol"),
             }
         if result.get("np_signal"):
             np = result["np_signal"]

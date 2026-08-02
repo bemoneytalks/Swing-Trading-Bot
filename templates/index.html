@@ -2526,55 +2526,90 @@ function formatGexNum(n) {
     return n.toFixed(0);
 }
 
-async function loadGex() {
+function ladderCell(val, max) {
+    const pct = Math.min(100, Math.abs(val) / max * 100);
+    const barColor = val >= 0 ? '#3fb950' : '#f47067';
+    const txtColor = val >= 0 ? '#7ee2a8' : '#ff9d94';
+    return '<div style="flex:1; display:flex; align-items:center; gap:6px; min-width:0;">'
+        + '<span style="width:60px; flex-shrink:0; text-align:right; font-size:10px; font-weight:600; color:' + txtColor + ';">' + formatGexNum(val) + '</span>'
+        + '<div style="flex:1; height:9px; background:#0d1117; border-radius:2px; overflow:hidden;">'
+        + '<div style="width:' + pct + '%; height:100%; background:' + barColor + '; opacity:.85;"></div>'
+        + '</div></div>';
+}
+
+async function loadGex(symbol) {
+    let sym = (typeof symbol === 'string' && symbol) ? symbol : null;
+    if (!sym) {
+        const inp = document.getElementById('symbol-input');
+        const v = inp ? inp.value.trim().toUpperCase() : '';
+        if (v && !['SPX', '^GSPC', '^SPX', 'NDX', '^NDX'].includes(v)) sym = v;
+    }
     switchTab('gex');
     document.getElementById('gex-loading').style.display = 'block';
-    document.getElementById('gex-loading').innerHTML = '<div class="spinner"></div><div>Fetching options data & calculating GEX...</div>';
+    document.getElementById('gex-loading').innerHTML = '<div class="spinner"></div><div>Fetching ' + (sym || 'SPX') + ' options chain & calculating dealer exposure...</div>';
     document.getElementById('gex-content').style.display = 'none';
     document.getElementById('gex-error').style.display = 'none';
-    setStatus('Calculating gamma exposure...');
+    setStatus('Calculating dealer exposure...');
 
     try {
-        const res = await fetch('/api/gex');
+        const res = await fetch('/api/gex' + (sym ? '?symbol=' + encodeURIComponent(sym) : ''));
         const data = await res.json();
 
         if (!data.success) throw new Error(data.error);
 
         const dealerClass = data.dealer_position === 'LONG GAMMA' ? 'long-gamma' : 'short-gamma';
+        const label = data.symbol || 'SPX';
 
-        // Build bar chart
-        const maxGex = Math.max(...data.chart_net_gex.map(v => Math.abs(v)), 1);
-        let barsHtml = '';
-        let labelsHtml = '';
-        const spotIdx = data.chart_strikes.findIndex(s => s >= data.spot);
-
-        // Calculate label interval: show ~8-12 labels with full strike prices
-        const totalStrikes = data.chart_strikes.length;
-        const labelInterval = Math.max(1, Math.round(totalStrikes / 10));
-
-        data.chart_net_gex.forEach((gex, i) => {
-            const pct = Math.abs(gex) / maxGex * 100;
-            const isPos = gex >= 0;
-            const isSpot = i === spotIdx;
-            const strike = data.chart_strikes[i];
-            const showGridline = i % labelInterval === 0 && i !== 0;
-            const gexFormatted = formatGexNum(gex);
-            const valClass = isPos ? 'tt-pos' : 'tt-neg';
-
-            barsHtml += `
-                <div class="gex-bar-group${showGridline ? ' has-gridline' : ''}" >
-                    <div class="gex-tooltip">
-                        <span class="tt-strike">${strike.toLocaleString()}</span><br>
-                        Net GEX: <span class="tt-value ${valClass}">${gexFormatted}</span>
-                    </div>
-                    ${isSpot ? '<div class="gex-spot-marker"></div>' : ''}
-                    <div class="gex-bar ${isPos ? 'positive' : 'negative'}" style="height:${pct}%"></div>
-                </div>`;
-
-            // Show full strike label at every Nth bar
-            const showLabel = i % labelInterval === 0;
-            labelsHtml += `<div class="gex-bar-label">${showLabel ? strike.toLocaleString() : ''}</div>`;
+        // ── Build the GEX / VEX / DEX synced ladder ──
+        const rows = data.chart_strikes.map(function(k, i) {
+            return { strike: k,
+                     gex: data.chart_net_gex[i] || 0,
+                     vex: (data.chart_net_vex || [])[i] || 0,
+                     dex: (data.chart_net_dex || [])[i] || 0 };
         });
+        rows.sort(function(a, b) { return b.strike - a.strike; });
+
+        const maxG = Math.max.apply(null, rows.map(function(r){ return Math.abs(r.gex); }).concat([1]));
+        const maxV = Math.max.apply(null, rows.map(function(r){ return Math.abs(r.vex); }).concat([1]));
+        const maxD = Math.max.apply(null, rows.map(function(r){ return Math.abs(r.dex); }).concat([1]));
+
+        let ladderHtml = '';
+        let spotInserted = false;
+        rows.forEach(function(r) {
+            // Insert the spot divider row where price sits in the ladder
+            if (!spotInserted && r.strike <= data.spot) {
+                ladderHtml += '<div style="display:flex; align-items:center; gap:8px; padding:3px 6px; background:#0b3540; border:1px solid #1f6f7a; border-radius:4px; margin:2px 0;">'
+                    + '<div style="width:64px; flex-shrink:0; text-align:right; font-size:11px; font-weight:700; color:#39d2e8;">' + data.spot.toLocaleString() + '</div>'
+                    + '<div style="flex:1; font-size:10px; color:#39d2e8; letter-spacing:1px;">SPOT ─ ' + label + ' last price</div>'
+                    + '</div>';
+                spotInserted = true;
+            }
+            let badges = '';
+            if (data.call_wall !== null && r.strike === data.call_wall) badges += ' <span style="font-size:8px; font-weight:700; background:#1c2b1c; color:#3fb950; border:1px solid #3fb950; border-radius:3px; padding:0 4px;">CW</span>';
+            if (data.put_wall !== null && r.strike === data.put_wall) badges += ' <span style="font-size:8px; font-weight:700; background:#2b1c1c; color:#f47067; border:1px solid #f47067; border-radius:3px; padding:0 4px;">PW</span>';
+            if (data.dex_magnet !== null && r.strike === data.dex_magnet) badges += ' <span style="font-size:8px; font-weight:700; background:#2b261c; color:#d29922; border:1px solid #d29922; border-radius:3px; padding:0 4px;">DM</span>';
+
+            ladderHtml += '<div style="display:flex; align-items:center; gap:8px; padding:2px 6px; border-bottom:1px solid #161b22;">'
+                + '<div style="width:64px; flex-shrink:0; text-align:right; font-size:11px; font-weight:600; color:#c9d1d9; white-space:nowrap;">' + r.strike.toLocaleString() + badges + '</div>'
+                + ladderCell(r.gex, maxG)
+                + ladderCell(r.vex, maxV)
+                + ladderCell(r.dex, maxD)
+                + '</div>';
+        });
+
+        const ladderCard = rows.length < 4
+            ? '<div class="card" style="margin-bottom:24px; text-align:center; padding:32px; color:#7d8590;">Options chain too thin near spot to build a meaningful exposure ladder for ' + label + '.</div>'
+            : '<div class="card" style="margin-bottom:24px;">'
+                + '<div class="card-title">' + label + ' Dealer Exposure Ladder <span style="color:#7d8590; font-weight:400;">— GEX / VEX / DEX by strike</span></div>'
+                + '<div style="display:flex; align-items:center; gap:8px; padding:4px 6px; border-bottom:1px solid #30363d; margin-bottom:2px;">'
+                + '<div style="width:64px; flex-shrink:0; text-align:right; font-size:10px; color:#7d8590; text-transform:uppercase;">Strike</div>'
+                + '<div style="flex:1; font-size:10px; color:#7d8590; text-transform:uppercase;">GEX <span style="color:#484f58;">(net ' + formatGexNum(data.total_gex) + ')</span></div>'
+                + '<div style="flex:1; font-size:10px; color:#7d8590; text-transform:uppercase;">VEX <span style="color:#484f58;">(net ' + formatGexNum(data.total_vex) + ')</span></div>'
+                + '<div style="flex:1; font-size:10px; color:#7d8590; text-transform:uppercase;">DEX <span style="color:#484f58;">(net ' + formatGexNum(data.total_dex) + ')</span></div>'
+                + '</div>'
+                + ladderHtml
+                + '<div style="font-size:10px; color:#484f58; margin-top:8px;">CW = call wall &nbsp; PW = put wall &nbsp; DM = delta magnet &nbsp;|&nbsp; open interest as of prior settle</div>'
+              + '</div>';
 
         // Top gamma strikes tables
         let callRows = data.top_call_gamma.map(s =>
@@ -2584,7 +2619,7 @@ async function loadGex() {
             `<tr><td>${s.strike.toLocaleString()}</td><td class="red">${formatGexNum(s.gex)}</td></tr>`
         ).join('');
 
-        // Per-expiry rows (built separately to avoid nested template literal issues)
+        // Per-expiry rows
         let expiryRows = '';
         data.per_expiry.forEach(function(e) {
             const rowStyle = e.is_monthly ? 'background:#1a1520;' : '';
@@ -2604,16 +2639,20 @@ async function loadGex() {
                 + '</tr>';
         });
 
+        const vannaBias = (data.total_vex || 0) >= 0 ? 'SUPPORTIVE' : 'FRAGILE';
+        const vannaColor = (data.total_vex || 0) >= 0 ? '#3fb950' : '#f47067';
+
         document.getElementById('gex-content').innerHTML = `
             <div class="signal-card">
-                <div class="signal-date">Gamma Exposure Analysis</div>
+                <div class="signal-date">Dealer Exposure Analysis — GEX / VEX / DEX</div>
                 <div style="font-size:11px; color:#484f58; margin-bottom:16px;">${data.timestamp} | Source: ${data.data_source} | ${data.expirations_used} expirations</div>
-                <div class="signal-close"><span>SPX</span> ${data.spot.toLocaleString()}</div>
+                <div class="signal-close"><span>${label}</span> ${data.spot.toLocaleString()}</div>
                 <div class="gex-dealer-badge ${dealerClass}">${data.dealer_position}</div>
+                <span style="display:inline-block; margin-left:8px; font-size:11px; font-weight:700; color:${vannaColor}; border:1px solid ${vannaColor}; border-radius:4px; padding:2px 10px;">VANNA ${vannaBias}</span>
                 <div class="gex-implication">${data.dealer_implication}</div>
             </div>
 
-            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px; margin-bottom:24px;">
+            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-bottom:16px;">
                 <div class="card" style="text-align:center;">
                     <div class="gex-level-label">GEX FLIP LEVEL</div>
                     <div class="gex-level-value" style="color:#d29922;">${data.gex_flip ? data.gex_flip.toLocaleString() : 'N/A'}</div>
@@ -2631,11 +2670,25 @@ async function loadGex() {
                 </div>
             </div>
 
-            <div class="card" style="margin-bottom:24px;">
-                <div class="card-title">Net GEX by Strike <span style="color:#d29922; font-weight:400;">(yellow line = spot)</span></div>
-                <div class="gex-bar-chart">${barsHtml}</div>
-                <div class="gex-bar-labels">${labelsHtml}</div>
+            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-bottom:24px;">
+                <div class="card" style="text-align:center;">
+                    <div class="gex-level-label">CALL WALL</div>
+                    <div class="gex-level-value" style="color:#3fb950;">${data.call_wall ? data.call_wall.toLocaleString() : 'N/A'}</div>
+                    <div class="gex-level-label">Largest call-gamma strike (magnet/ceiling)</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div class="gex-level-label">PUT WALL</div>
+                    <div class="gex-level-value" style="color:#f47067;">${data.put_wall ? data.put_wall.toLocaleString() : 'N/A'}</div>
+                    <div class="gex-level-label">Largest put-gamma strike (magnet/floor)</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div class="gex-level-label">DELTA MAGNET</div>
+                    <div class="gex-level-value" style="color:#d29922;">${data.dex_magnet ? data.dex_magnet.toLocaleString() : 'N/A'}</div>
+                    <div class="gex-level-label">Largest delta-exposure concentration</div>
+                </div>
             </div>
+
+            ${ladderCard}
 
             <div class="card" style="margin-bottom:24px;">
                 <div class="card-title">GEX by Expiration Date</div>
@@ -2674,24 +2727,26 @@ async function loadGex() {
             </div>
 
             <div class="card" style="margin-top:16px;">
-                <div class="card-title">How to Read GEX</div>
+                <div class="card-title">How to Read the Exposure Ladder</div>
                 <div class="metric"><span class="metric-label">Total Net GEX</span><span class="metric-value">${formatGexNum(data.total_gex)}</span></div>
+                <div class="metric"><span class="metric-label">Total Net VEX</span><span class="metric-value">${formatGexNum(data.total_vex)}</span></div>
+                <div class="metric"><span class="metric-label">Total Net DEX</span><span class="metric-value">${formatGexNum(data.total_dex)}</span></div>
                 <div style="font-size:12px; color:#7d8590; margin-top:12px; line-height:1.8;">
-                    <strong style="color:#3fb950;">Dealers LONG gamma (positive GEX):</strong> They sell into rallies and buy dips. Market tends to be pinned, lower volatility, mean-reverting.<br>
-                    <strong style="color:#f47067;">Dealers SHORT gamma (negative GEX):</strong> They buy rallies and sell dips (amplifying moves). Market trends harder, higher volatility, breakout-prone.<br>
-                    <strong style="color:#d29922;">GEX Flip Level:</strong> The strike where dealer positioning flips. Above it = long gamma environment. Below it = short gamma. Acts as a magnet.<br>
-                    <strong>Gamma Support/Resistance:</strong> Strikes with highest absolute gamma act as magnets and walls. Price tends to gravitate toward high-gamma strikes.
+                    <strong style="color:#3fb950;">GEX (gamma):</strong> Positive = dealers sell rallies / buy dips (pinning, mean reversion). Negative = dealers amplify moves (trend, volatility). The flip level and walls act as magnets.<br>
+                    <strong style="color:#d29922;">VEX (vanna):</strong> How dealer hedges shift when implied volatility moves. Positive net VEX = falling IV fuels rallies (supportive); negative = IV spikes force selling (fragile). Strongest near OPEX.<br>
+                    <strong style="color:#39d2e8;">DEX (delta):</strong> Dollar notional of dealer delta hedges by strike. Heavy concentrations (DM badge) act as price magnets into expiration.<br>
+                    <strong>Walls:</strong> CW = call wall (ceiling/magnet above), PW = put wall (floor/magnet below). Targets just beyond a wall are lower-probability.
                 </div>
             </div>
 
             <div class="gex-source">
-                Data is delayed ~15-20 min via Yahoo Finance. This is an estimate, not institutional-grade GEX.
+                Data is delayed ~15-20 min via Yahoo Finance; open interest updates once daily. This is an estimate, not institutional-grade positioning data.
             </div>
         `;
 
         document.getElementById('gex-loading').style.display = 'none';
         document.getElementById('gex-content').style.display = 'block';
-        setStatus(`GEX loaded - Dealers ${data.dealer_position}`);
+        setStatus(label + ' exposure loaded - Dealers ' + data.dealer_position);
     } catch (err) {
         document.getElementById('gex-loading').style.display = 'none';
         document.getElementById('gex-error').style.display = 'block';
