@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.0.0 — The Any-Ticker Update (2026-08-02)
+
+### Added
+- **Per-ticker ML Signal + Backtest** — the final piece. Enter any ticker
+  and the ML Signal tab trains a dedicated Random Forest + Gradient
+  Boosting ensemble for it on first use (~1–3 minutes, then cached under
+  model/<symbol>_*.pkl with its own daily-data cache), producing next-day
+  and 5-day trend probabilities. The Backtest tab replays that model's
+  last 30 days. SPX/NDX models and behavior are unchanged.
+- **Earnings guard for ML signals**: single-stock predictions display the
+  next earnings date, and signals within 5 days of earnings are flagged
+  "SIGNAL UNRELIABLE THROUGH EARNINGS GAP". Shared earnings.py module now
+  powers both the ML guard and the options grader's IV-crush guard.
+- **Symbol banners** on the ML Signal and Backtest tabs, and the live
+  price line is labeled with the analyzed ticker.
+- **Housekeeping**: per-symbol models and caches untouched for 30+ days
+  are cleaned up at startup (SPX/NDX artifacts are never touched).
+
+### The Any-Ticker Update (v1.1 → v2.0) in one line
+Type any ticker: Confluence says whether and which direction → the
+GEX/VEX/DEX ladder says where the dealer walls are → the Grader says which
+contract → the Contract Analyzer says your specific odds → the ML Signal
+adds model probabilities → the Exit engine says when to get out.
+
+### Notes
+- Single-stock ML models are noisier than index models (single-name
+  idiosyncratic risk, earnings gaps); treat probabilities as one input,
+  never a sole basis. Index models have longer validation history.
+
 ## v1.3.2 — Options Dashboard Follows the Graded Ticker (2026-08-02)
 
 ### Changed

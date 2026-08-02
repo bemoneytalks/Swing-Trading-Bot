@@ -63,16 +63,34 @@ def _atomic_joblib_dump(obj, path):
 
 
 def _get_index_config(index='SPX'):
-    """Return (ticker, model_path, scaler_path, feature_path, trend_model_path, trend_scaler_path, trend_feature_path, cache_name)"""
+    """Return (ticker, model_path, scaler_path, feature_path, trend_model_path, trend_scaler_path, trend_feature_path, cache_name).
+
+    ``index`` may be 'SPX', 'NDX', or any ticker symbol (e.g. 'NVDA') —
+    custom symbols get their own model artifacts under model/ and their own
+    daily-data cache, trained on demand. SPX/NDX paths are unchanged.
+    """
     if index == 'NDX':
         return (config.NDX_TICKER,
                 config.NDX_MODEL_PATH, config.NDX_SCALER_PATH, config.NDX_FEATURE_PATH,
                 config.NDX_TREND_MODEL_PATH, config.NDX_TREND_SCALER_PATH, config.NDX_TREND_FEATURE_PATH,
                 "ndx_daily.csv")
-    return (config.TICKER,
-            config.MODEL_PATH, config.SCALER_PATH, config.FEATURE_PATH,
-            config.TREND_MODEL_PATH, config.TREND_SCALER_PATH, config.TREND_FEATURE_PATH,
-            "spx_daily.csv")
+    if index in ('SPX', None):
+        return (config.TICKER,
+                config.MODEL_PATH, config.SCALER_PATH, config.FEATURE_PATH,
+                config.TREND_MODEL_PATH, config.TREND_SCALER_PATH, config.TREND_FEATURE_PATH,
+                "spx_daily.csv")
+
+    # Any-ticker: per-symbol artifacts (model/nvda_model.pkl, nvda_daily.csv)
+    import re
+    sym = str(index).upper()
+    key = re.sub(r'[^A-Z0-9.\-]', '', sym.lstrip('^')).lower()
+    key = key.replace('.', '_').replace('-', '_')
+    if not key or key in ('spx', 'ndx'):
+        raise ValueError(f"Invalid model symbol: {index!r}")
+    return (sym,
+            f"model/{key}_model.pkl", f"model/{key}_scaler.pkl", f"model/{key}_features.pkl",
+            f"model/{key}_trend_model.pkl", f"model/{key}_trend_scaler.pkl", f"model/{key}_trend_features.pkl",
+            f"{key}_daily.csv")
 
 
 def prepare_data(df):

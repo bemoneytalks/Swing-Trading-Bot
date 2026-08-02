@@ -2238,15 +2238,22 @@ async function loadTradeLog() {
 }
 
 async function loadPrediction() {
+    let sym = null;
+    {
+        const inp = document.getElementById('symbol-input');
+        const v = inp ? inp.value.trim().toUpperCase() : '';
+        if (v && !['SPX', '^GSPC', '^SPX', 'NDX', '^NDX'].includes(v)) sym = v;
+    }
     switchTab('signal');
     document.getElementById('signal-loading').style.display = 'block';
-    document.getElementById('signal-loading').innerHTML = '<div class="spinner"></div><div>Loading prediction...</div>';
+    document.getElementById('signal-loading').innerHTML = '<div class="spinner"></div><div>Loading ' + (sym || 'SPX') + ' prediction...'
+        + (sym ? '<br><span style="font-size:11px; color:#7d8590;">First run for a new ticker trains its model — this can take 1&ndash;3 minutes.</span>' : '') + '</div>';
     document.getElementById('signal-content').style.display = 'none';
     document.getElementById('signal-error').style.display = 'none';
-    setStatus('Fetching prediction...');
+    setStatus('Fetching ' + (sym || 'SPX') + ' prediction...');
 
     try {
-        const res = await fetch('/api/predict');
+        const res = await fetch('/api/predict' + (sym ? '?symbol=' + encodeURIComponent(sym) : ''));
         const data = await res.json();
 
         if (!data.success) throw new Error(data.error);
@@ -2255,12 +2262,17 @@ async function loadPrediction() {
         const l = data.levels;
 
         const t = data.trend_5d || {};
-        document.getElementById('signal-content').innerHTML = `
+        const mlBanner = '<div class="signal-card" style="margin-bottom:12px; padding:14px 22px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;">'
+            + '<span style="font-size:26px; font-weight:800; letter-spacing:1px; color:#e6edf3;">' + (data.symbol || data.index || 'SPX') + '</span>'
+            + '<span style="font-size:15px; color:#7d8590;">ML Signal &middot; next-day + 5-day trend</span>'
+            + (data.earnings_date ? '<span style="font-size:11px; font-weight:700; color:' + (data.earnings_warning ? '#f47067' : '#d29922') + ';">Earnings: ' + data.earnings_date + ' (' + data.earnings_in_days + 'd)' + (data.earnings_warning ? ' — SIGNAL UNRELIABLE THROUGH EARNINGS GAP' : '') + '</span>' : '')
+            + '</div>';
+        document.getElementById('signal-content').innerHTML = mlBanner + `
             <div class="signal-card">
                 <div class="signal-date">${data.prediction_for || data.today}</div>
                 <div style="font-size:11px; color:#484f58; margin-bottom:4px;">Based on ${data.data_date} close: <strong>${data.close.toLocaleString()}</strong></div>
                 ${data.live_price ? `<div style="font-size:13px; margin-bottom:12px;">
-                    <span style="color:#8b949e;">Live SPX:</span>
+                    <span style="color:#8b949e;">Live ${data.symbol || data.index || 'SPX'}:</span>
                     <strong style="color:${data.live_change >= 0 ? '#3fb950' : '#f85149'}">${data.live_price.toLocaleString()}</strong>
                     <span style="color:${data.live_change >= 0 ? '#3fb950' : '#f85149'}; font-size:11px;">${data.live_change >= 0 ? '+' : ''}${data.live_change} (${data.live_change >= 0 ? '+' : ''}${data.live_change_pct}%)</span>
                 </div>` : `<div style="font-size:11px; color:#484f58; margin-bottom:12px;">Market closed</div>`}
@@ -2464,19 +2476,29 @@ async function loadPrediction() {
 }
 
 async function loadBacktest() {
+    let sym = null;
+    {
+        const inp = document.getElementById('symbol-input');
+        const v = inp ? inp.value.trim().toUpperCase() : '';
+        if (v && !['SPX', '^GSPC', '^SPX', 'NDX', '^NDX'].includes(v)) sym = v;
+    }
     switchTab('backtest');
     document.getElementById('backtest-loading').style.display = 'block';
-    document.getElementById('backtest-loading').innerHTML = '<div class="spinner"></div><div>Loading backtest...</div>';
+    document.getElementById('backtest-loading').innerHTML = '<div class="spinner"></div><div>Loading ' + (sym || 'SPX') + ' backtest...'
+        + (sym ? '<br><span style="font-size:11px; color:#7d8590;">First run for a new ticker trains its model — this can take 1&ndash;3 minutes.</span>' : '') + '</div>';
     document.getElementById('backtest-content').style.display = 'none';
     document.getElementById('backtest-error').style.display = 'none';
-    setStatus('Loading backtest...');
+    setStatus('Loading ' + (sym || 'SPX') + ' backtest...');
 
     try {
-        const res = await fetch('/api/backtest');
+        const res = await fetch('/api/backtest' + (sym ? '?symbol=' + encodeURIComponent(sym) : ''));
         const data = await res.json();
 
         if (!data.success) throw new Error(data.error);
 
+        const btBanner = '<div class="signal-card" style="margin-bottom:12px; padding:12px 22px;">'
+            + '<span style="font-size:24px; font-weight:800; letter-spacing:1px; color:#e6edf3;">' + (data.symbol || data.index || 'SPX') + '</span>'
+            + ' <span style="font-size:13px; color:#7d8590; margin-left:10px;">Model backtest &middot; last ' + (data.total || 30) + ' trading days</span></div>';
         let tableRows = data.rows.map(r => `
             <tr class="${r.is_high_conf ? 'high-conf-row' : 'uncertain-row'}">
                 <td>${r.date}</td>
@@ -2494,7 +2516,7 @@ async function loadBacktest() {
                 <div class="stat-value high-conf-val">${data.high_conf_correct}/${data.high_conf_total} (${data.high_conf_accuracy}%)</div>
             </div>` : '';
 
-        document.getElementById('backtest-content').innerHTML = `
+        document.getElementById('backtest-content').innerHTML = btBanner + `
             <div class="backtest-card">
                 <div class="backtest-header">
                     <div class="card-title" style="margin:0; border:none; padding:0;">Last 30 Trading Days</div>

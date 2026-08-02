@@ -42,6 +42,51 @@ import yfinance as yf
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 
+def _cleanup_stale_symbol_artifacts(max_age_days=30):
+    """Delete per-symbol models and caches untouched for > max_age_days.
+
+    SPX/NDX artifacts are never touched (explicit allowlist), and only
+    known per-symbol filename patterns are considered.
+    """
+    import glob
+    import time as _time
+    base = os.path.dirname(os.path.abspath(__file__))
+    cutoff = _time.time() - max_age_days * 86400
+    protected = ("spx_", "ndx_", "cross_asset")
+    patterns = [
+        os.path.join(base, "model", "*_model.pkl"),
+        os.path.join(base, "model", "*_scaler.pkl"),
+        os.path.join(base, "model", "*_features.pkl"),
+        os.path.join(base, "model", "*_trend_model.pkl"),
+        os.path.join(base, "model", "*_trend_scaler.pkl"),
+        os.path.join(base, "model", "*_trend_features.pkl"),
+        os.path.join(base, "cache", "*_daily.csv"),
+        os.path.join(base, "cache", "*_daily.csv.meta"),
+        os.path.join(base, "cache", "chain_*.json"),
+        os.path.join(base, "cache", "gex_signal_*.json"),
+    ]
+    removed = 0
+    for pat in patterns:
+        for f in glob.glob(pat):
+            name = os.path.basename(f).lower()
+            if any(name.startswith(p) or p in name for p in protected):
+                continue
+            try:
+                if os.path.getmtime(f) < cutoff:
+                    os.remove(f)
+                    removed += 1
+            except OSError:
+                pass
+    if removed:
+        print(f"[CLEANUP] Removed {removed} stale per-symbol artifact(s) (>{max_age_days}d old)")
+
+
+try:
+    _cleanup_stale_symbol_artifacts()
+except Exception:
+    pass
+
+
 def _get_index(default='SPX'):
     """Get index param from request, validated."""
     idx = request.args.get('index', default).upper().strip()
@@ -123,9 +168,14 @@ def index():
 def api_predict():
     try:
         index = _get_index()
-        ticker_sym = config.NDX_TICKER if index == 'NDX' else "^GSPC"
+        symbol = _get_symbol()
+        custom_symbol = symbol if symbol not in (None, '^GSPC', '^NDX') else None
+        if symbol == '^NDX':
+            index = 'NDX'
+        model_key = custom_symbol or index
+        ticker_sym = custom_symbol or (config.NDX_TICKER if index == 'NDX' else "^GSPC")
 
-        prediction = predict_next_day(index=index)
+        prediction = predict_next_day(index=model_key)
         bull_prob = prediction["bull_probability"]
         f = prediction["features"]
 
@@ -193,7 +243,7 @@ def api_predict():
 
         # 5-day trend prediction
         try:
-            trend = predict_trend(index=index)
+            trend = predict_trend(index=model_key)
             trend_bull_prob = trend["bull_probability"]
             trend_data = {
                 "bull_prob": round(trend_bull_prob * 100, 1),
@@ -209,9 +259,28 @@ def api_predict():
         except Exception as te:
             trend_data = {"bull_prob": None, "bear_prob": None, "signal": "UNAVAILABLE", "signal_class": "neutral", "error": str(te)}
 
+        # Earnings warning for single stocks (index symbols return None)
+        earnings_date = None
+        earnings_in_days = None
+        earnings_warning = False
+        if custom_symbol:
+            try:
+                from earnings import get_next_earnings
+                e = get_next_earnings(custom_symbol)
+                if e:
+                    earnings_date = e.strftime("%Y-%m-%d")
+                    earnings_in_days = (e - datetime.now()).days
+                    earnings_warning = 0 <= earnings_in_days <= 5
+            except Exception:
+                pass
+
         return jsonify({
             "success": True,
             "index": index,
+            "symbol": custom_symbol or index,
+            "earnings_date": earnings_date,
+            "earnings_in_days": earnings_in_days,
+            "earnings_warning": earnings_warning,
             "today": prediction_for,
             "data_date": prev_close_label,
             "prediction_for": prediction_for,
@@ -264,10 +333,16 @@ def api_predict():
 def api_backtest():
     try:
         index = _get_index()
-        ticker_sym = config.NDX_TICKER if index == 'NDX' else config.TICKER
-        cache_name = "ndx_daily.csv" if index == 'NDX' else "spx_daily.csv"
+        symbol = _get_symbol()
+        custom_symbol = symbol if symbol not in (None, '^GSPC', '^NDX') else None
+        if symbol == '^NDX':
+            index = 'NDX'
+        model_key = custom_symbol or index
+        from model import _get_index_config
+        cfg = _get_index_config(model_key)
+        ticker_sym, cache_name = cfg[0], cfg[7]
 
-        model, scaler, feature_cols = load_model(index=index)
+        model, scaler, feature_cols = load_model(index=model_key)
         raw_df = fetch_index_data(ticker_sym, cache_name)
         df = prepare_data(raw_df)
 
@@ -315,6 +390,7 @@ def api_backtest():
         return jsonify({
             "success": True,
             "index": index,
+            "symbol": custom_symbol or index,
             "rows": rows,
             "accuracy": round(correct / len(recent) * 100, 1),
             "correct": correct,
@@ -331,9 +407,15 @@ def api_backtest():
 def api_train():
     try:
         index = _get_index()
-        train_model(force_refresh_data=True, index=index)
-        train_trend_model(force_refresh_data=False, index=index)  # data already fresh from above
-        return jsonify({"success": True, "index": index, "message": f"{index} daily + 5-day trend models retrained with latest market data."})
+        symbol = _get_symbol()
+        custom_symbol = symbol if symbol not in (None, '^GSPC', '^NDX') else None
+        if symbol == '^NDX':
+            index = 'NDX'
+        model_key = custom_symbol or index
+        train_model(force_refresh_data=True, index=model_key)
+        train_trend_model(force_refresh_data=False, index=model_key)  # data already fresh from above
+        return jsonify({"success": True, "index": index, "symbol": custom_symbol or index,
+                        "message": f"{custom_symbol or index} daily + 5-day trend models retrained with latest market data."})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
