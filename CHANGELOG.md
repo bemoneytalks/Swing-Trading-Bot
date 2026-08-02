@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.2.0 — GEX/VEX/DEX Dealer Exposure Ladder (2026-08-02)
+
+### Added
+- **Dealer Exposure Ladder**: the GEX tab is now a synced per-strike ladder
+  showing GEX (gamma), VEX (vanna), and DEX (delta) dealer exposure side by
+  side, with a highlighted spot row, call wall / put wall / delta magnet
+  badges, per-column net totals, and a thin-chain guard. Works for **any
+  optionable ticker** via the global ticker input, plus SPX/NDX as before.
+- **New levels**: Call Wall, Put Wall, Delta Magnet, and a Vanna
+  Supportive/Fragile bias badge alongside the existing flip level and
+  gamma support/resistance.
+- **`chain_service.py`**: shared per-symbol options-chain fetch with a
+  30-minute cache — one fetch powers the ladder, dealer positioning, and the
+  upcoming v1.3 contract grader.
+- **Per-ticker GEX Regime + Dealer Positioning**: the confluence
+  `gex_regime` indicator and the Leading Indicators panel's GEX Regime and
+  Dealer Positioning cards now use the analyzed ticker's own chain
+  (put/call volume & OI ratios included). SPX/NDX behavior unchanged.
+- `/api/gex` accepts `?symbol=` and returns per-strike `chart_net_vex` /
+  `chart_net_dex` plus wall levels.
+
+### Notes
+- Net Premium Flow remains SPX/NDX: its streak/flip logic needs day-by-day
+  history, which begins accumulating per ticker in a future release.
+- Sign conventions follow the standard retail dealer model (dealers short
+  customer options); OI updates once daily via Yahoo Finance.
+
 ## v1.1.1 — Per-Ticker Leading Indicators (2026-08-02)
 
 ### Fixed
