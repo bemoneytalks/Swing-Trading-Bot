@@ -709,6 +709,21 @@ def api_scan():
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
 
 
+@app.route("/api/options/grade")
+def api_options_grade():
+    try:
+        symbol = _get_symbol() or "^GSPC"
+        # Grader speaks display symbols (SPX/NDX/NVDA), not yahoo tickers
+        display = {"^GSPC": "SPX", "^NDX": "NDX"}.get(symbol, symbol)
+        allow_earnings = request.args.get("allow_earnings", "0") == "1"
+        from options_grader import grade_chain
+        result = grade_chain(display, allow_earnings=allow_earnings)
+        result["success"] = True
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
 @app.route("/api/options/contract")
 def api_options_contract():
     try:

@@ -61,3 +61,36 @@ NDX_FEATURE_PATH = "model/ndx_features.pkl"
 NDX_TREND_MODEL_PATH = "model/ndx_trend_model.pkl"
 NDX_TREND_SCALER_PATH = "model/ndx_trend_scaler.pkl"
 NDX_TREND_FEATURE_PATH = "model/ndx_trend_features.pkl"
+
+# ─── Options Grader (v1.3.0) ─────────────────────────────────────────
+# Preset rules for the A–F contract grader. All thresholds tunable here.
+GRADER_DTE_MIN = 30            # swing horizon: min days to expiration
+GRADER_DTE_MAX = 90            # swing horizon: max days to expiration
+GRADER_MIN_OI = 100            # eligibility: minimum open interest
+GRADER_MAX_SPREAD_PCT = 0.12   # eligibility: max bid-ask spread as % of mid
+GRADER_MIN_MID = 0.10          # eligibility: minimum mid price ($)
+GRADER_DELTA_MIN = 0.15        # eligibility: min |delta|
+GRADER_DELTA_MAX = 0.90        # eligibility: max |delta|
+GRADER_EARNINGS_EXCLUDE_DAYS = 7   # exclude all grades if earnings this close
+
+# Quality score weights (sum to 1.0)
+GRADER_W_LIQUIDITY = 0.40
+GRADER_W_VALUE = 0.25
+GRADER_W_PROBABILITY = 0.20
+GRADER_W_RISK = 0.15
+
+# Recommendation = quality * this + tier fit * (1 - this)
+GRADER_W_QUALITY_IN_REC = 0.65
+
+# Tier definitions: (delta band lo, hi, DTE pref lo, hi)
+GRADER_TIERS = {
+    "conservative": {"delta": (0.65, 0.85), "dte": (60, 90),
+                     "tagline": "Lower relative risk"},
+    "balanced":     {"delta": (0.45, 0.60), "dte": (45, 75),
+                     "tagline": "Balanced risk/reward"},
+    "aggressive":   {"delta": (0.25, 0.40), "dte": (30, 60),
+                     "tagline": "Higher relative risk"},
+}
+
+# Letter grade boundaries
+GRADER_LETTERS = [(90, "A"), (75, "B"), (60, "C"), (45, "D"), (0, "F")]
