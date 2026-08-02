@@ -48,6 +48,19 @@ def _get_index(default='SPX'):
     return 'NDX' if idx == 'NDX' else 'SPX'
 
 
+def _get_symbol(default=None):
+    """Get an explicit ?symbol= param, normalized to a Yahoo Finance ticker.
+
+    Returns ``default`` (None) when absent so callers can fall back to the
+    existing index-based behavior unchanged.
+    """
+    raw = (request.args.get('symbol') or '').upper().strip()
+    if not raw:
+        return default
+    aliases = {'SPX': '^GSPC', '^SPX': '^GSPC', 'NDX': '^NDX'}
+    return aliases.get(raw, raw)
+
+
 def signal_label(bull_prob):
     if bull_prob >= config.STRONG_BULL_THRESHOLD:
         return "STRONG BULLISH"
@@ -372,10 +385,15 @@ def api_gex():
 def api_confluence():
     try:
         index = _get_index()
-        symbol = config.NDX_TICKER if index == 'NDX' else "^GSPC"
+        symbol = _get_symbol()
+        custom_symbol = symbol if symbol not in (None, '^GSPC', '^NDX') else None
+        if symbol == '^NDX':
+            index = 'NDX'
+        if symbol is None:
+            symbol = config.NDX_TICKER if index == 'NDX' else "^GSPC"
         result = analyze_ticker_with_confidence(symbol)
         if result is None:
-            return jsonify({"success": False, "error": f"Could not fetch {index} data"})
+            return jsonify({"success": False, "error": f"Could not fetch {custom_symbol or index} data"})
 
         # Convert scores to serializable format
         scores_list = []
@@ -391,8 +409,10 @@ def api_confluence():
         # Fetch live/intraday data for current session info
         live = {}
         try:
-            # Pick tickers to try based on index
-            if index == 'NDX':
+            # Pick tickers to try based on symbol/index
+            if custom_symbol:
+                candidates = [(custom_symbol, "2m"), (custom_symbol, "15m")]
+            elif index == 'NDX':
                 candidates = [("^NDX", "2m"), ("QQQ", "1m")]
             else:
                 candidates = [("^GSPC", "2m"), ("^SPX", "2m"), ("SPY", "1m")]
@@ -475,7 +495,7 @@ def api_confluence():
         resp = {
             "success": True,
             "index": index,
-            "symbol": index,
+            "symbol": custom_symbol or index,
             "price": result["price"],
             "change_1d": result["change_1d"],
             "signal": result["signal"],
@@ -560,10 +580,10 @@ def api_confluence():
 def api_confidence():
     try:
         index = _get_index()
-        symbol = config.NDX_TICKER if index == 'NDX' else "^GSPC"
+        symbol = _get_symbol() or (config.NDX_TICKER if index == 'NDX' else "^GSPC")
         result = analyze_ticker(symbol)
         if result is None:
-            return jsonify({"success": False, "error": f"Could not fetch {index} data"})
+            return jsonify({"success": False, "error": f"Could not fetch {symbol} data"})
         from confidence import assess_confidence
         conf = assess_confidence(result, index=index)
         conf["success"] = True

@@ -345,6 +345,8 @@
 
         .tabs {
             display: flex;
+            flex-wrap: wrap;
+            align-items: center;
             gap: 0;
             margin-bottom: 24px;
             border-bottom: 1px solid #21262d;
@@ -1285,6 +1287,12 @@
         <button class="tab" onclick="loadPrediction()">ML Signal</button>
         <button class="tab" onclick="loadGex()">GEX</button>
         <button class="tab" onclick="loadBacktest()">Backtest</button>
+        <div style="margin-left:auto; display:flex; gap:6px; align-items:center; padding:4px 0;">
+            <input type="text" id="symbol-input" placeholder="Any ticker (e.g. NVDA)"
+                   style="width:140px; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#e6edf3; padding:6px 10px; font-size:12px;"
+                   onkeydown="if(event.key==='Enter')analyzeSymbol()">
+            <button class="btn primary" style="padding:6px 14px; font-size:12px;" onclick="analyzeSymbol()">Analyze</button>
+        </div>
     </div>
 
     <div id="confluence-tab" class="tab-content active">
@@ -1797,7 +1805,8 @@
 let tickerInterval = null;
 
 // Shared ticker renderer — called by both loadTicker() and loadConfluence()
-function renderTickerBar(price, change, changePct, prevClose, open, high, low, rangePct, volume, ts) {
+function renderTickerBar(price, change, changePct, prevClose, open, high, low, rangePct, volume, ts, label) {
+    const symLabel = label || 'SPX';
     const changeClass = change > 0 ? 'up' : change < 0 ? 'down' : 'flat';
     const changeSign = change >= 0 ? '+' : '';
     const vol = volume == null ? '—' :
@@ -1807,7 +1816,7 @@ function renderTickerBar(price, change, changePct, prevClose, open, high, low, r
     const dotPos = Math.max(0, Math.min(100, rangePct || 50));
     document.getElementById('ticker-bar').innerHTML = `
         <div style="display:flex; align-items:center; gap:6px;">
-            <span style="color:#7d8590; font-size:13px; font-weight:600;">SPX</span>
+            <span style="color:#7d8590; font-size:13px; font-weight:600;">${symLabel}</span>
             <span class="ticker-price">${price.toLocaleString()}</span>
         </div>
         <span class="ticker-change ${changeClass}">${changeSign}${change.toFixed(2)} (${changeSign}${changePct}%)</span>
@@ -1877,6 +1886,14 @@ function switchTab(tab) {
     const tabMap = { confluence: 0, ndx: 1, options: 2, risk: 3, scanner: 4, patterns: 5, signal: 6, gex: 7, backtest: 8 };
     document.querySelectorAll('.tab')[tabMap[tab]].classList.add('active');
     document.getElementById(tab + '-tab').classList.add('active');
+}
+
+function analyzeSymbol() {
+    const v = document.getElementById('symbol-input').value.trim().toUpperCase();
+    if (!v) return;
+    if (v === 'NDX' || v === '^NDX') { loadNdxDashboard(); return; }
+    if (v === 'SPX' || v === '^GSPC' || v === '^SPX') { loadConfluence(); return; }
+    loadConfluence(v);
 }
 
 function setStatus(msg) {
@@ -2883,16 +2900,17 @@ function buildDualIndicatorPanel(data, indicatorRows) {
         </div>`;
 }
 
-async function loadConfluence() {
+async function loadConfluence(symbol) {
+    const sym = (typeof symbol === 'string' && symbol) ? symbol : null;
     switchTab('confluence');
     document.getElementById('confluence-loading').style.display = 'block';
-    document.getElementById('confluence-loading').innerHTML = '<div class="spinner"></div><div>Analyzing SPX confluence indicators...</div>';
+    document.getElementById('confluence-loading').innerHTML = '<div class="spinner"></div><div>Analyzing ' + (sym || 'SPX') + ' confluence indicators...</div>';
     document.getElementById('confluence-content').style.display = 'none';
     document.getElementById('confluence-error').style.display = 'none';
     setStatus('Running confluence analysis...');
 
     try {
-        const res = await fetch('/api/confluence');
+        const res = await fetch('/api/confluence' + (sym ? '?symbol=' + encodeURIComponent(sym) : ''));
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
 
@@ -3021,9 +3039,9 @@ async function loadConfluence() {
 
         document.getElementById('confluence-content').innerHTML = `
             <div class="signal-card" style="text-align:center;">
-                <div class="signal-date">SPX Swing Trade Confluence ${tcBadge}</div>
+                <div class="signal-date">${data.symbol} Swing Trade Confluence ${tcBadge}</div>
                 <div style="font-size:11px; color:#484f58; margin-bottom:8px;">${data.timestamp} | Need ${data.threshold}/${data.total_indicators || 12} to ENTER · 6–7 = STAY · 5 = LEAN</div>
-                <div class="signal-close"><span>SPX</span> ${data.live ? data.live.current.toLocaleString() : data.price.toLocaleString()}</div>
+                <div class="signal-close"><span>${data.symbol}</span> ${data.live ? data.live.current.toLocaleString() : data.price.toLocaleString()}</div>
                 <div style="font-size:12px; color:${data.change_1d >= 0 ? '#3fb950' : '#ff7b72'}; margin-bottom:4px;">
                     ${data.change_1d >= 0 ? '+' : ''}${data.change_1d}% prev close
                 </div>
@@ -3093,7 +3111,7 @@ async function loadConfluence() {
             const lv = data.live;
             renderTickerBar(lv.current, lv.change_from_close, lv.change_from_close_pct,
                             lv.prev_close, lv.open, lv.high, lv.low, lv.day_range_pct,
-                            null, new Date().toLocaleTimeString());
+                            null, new Date().toLocaleTimeString(), data.symbol);
         }
 
         // Load net premium data asynchronously
