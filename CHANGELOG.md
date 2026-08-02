@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.3.0 — Options Contract Grader (2026-08-02)
+
+### Added
+- **Grader tab**: A–F contract grading for any optionable ticker. Direction
+  comes from the Trend Confluence system; every contract in the 30–90 DTE
+  swing window is scored against preset rules, and the best candidate per
+  risk tier (Conservative 0.65–0.85Δ / Balanced 0.45–0.60Δ / Aggressive
+  0.25–0.40Δ) is surfaced with Recommendation, Quality, and Tier-fit scores,
+  delta, probability of profit, max risk, breakeven, IV, liquidity, theta,
+  and a "why this contract" explanation.
+- **Preset rules** (all tunable in config.py `GRADER_*`): OI ≥ 100, spread
+  ≤ 12% of mid, |delta| 0.15–0.90; quality = 40% liquidity + 25% value
+  (IV vs 20-day HV) + 20% probability + 15% risk efficiency (theta burn +
+  breakeven distance vs ATR); recommendation = 65% quality + 35% tier fit;
+  A ≥ 90, B ≥ 75, C ≥ 60, D ≥ 45, else F.
+- **Earnings guard**: recommendations are suppressed within 7 days of
+  earnings (IV crush protection), and any contract whose expiry spans an
+  earnings date is tagged EARNINGS BEFORE EXPIRY.
+- **"Our Take" narrative** including dealer gamma regime and wall levels
+  from the v1.2 exposure engine.
+- `/api/options/grade?symbol=` endpoint; `test_grader.py` (27 unit tests,
+  synthetic contracts, no network).
+
+### Notes
+- Quotes are delayed and stale off-hours (mids labeled "estimated"); OI
+  updates once daily. Educational estimates — verify with your broker.
+
 ## v1.2.0 — GEX/VEX/DEX Dealer Exposure Ladder (2026-08-02)
 
 ### Added

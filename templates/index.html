@@ -1287,6 +1287,7 @@
         <button class="tab" onclick="loadPrediction()">ML Signal</button>
         <button class="tab" onclick="loadGex()">GEX</button>
         <button class="tab" onclick="loadBacktest()">Backtest</button>
+        <button class="tab" onclick="loadGrader()">Grader</button>
         <div style="margin-left:auto; display:flex; gap:6px; align-items:center; padding:4px 0;">
             <input type="text" id="symbol-input" placeholder="Any ticker (e.g. NVDA)"
                    style="width:140px; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#e6edf3; padding:6px 10px; font-size:12px;"
@@ -1695,6 +1696,15 @@
         <div id="backtest-error" style="display:none;"></div>
     </div>
 
+    <div id="grader-tab" class="tab-content">
+        <div id="grader-loading" class="loading">
+            <div class="spinner"></div>
+            <div>Click "Grader" to grade option contracts</div>
+        </div>
+        <div id="grader-content" style="display:none;"></div>
+        <div id="grader-error" style="display:none;"></div>
+    </div>
+
     <!-- ══════════════════════════════════════════════════════
          NDX PARALLEL DASHBOARD
          ══════════════════════════════════════════════════════ -->
@@ -1883,7 +1893,7 @@ function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
 
-    const tabMap = { confluence: 0, ndx: 1, options: 2, risk: 3, scanner: 4, patterns: 5, signal: 6, gex: 7, backtest: 8 };
+    const tabMap = { confluence: 0, ndx: 1, options: 2, risk: 3, scanner: 4, patterns: 5, signal: 6, gex: 7, backtest: 8, grader: 9 };
     document.querySelectorAll('.tab')[tabMap[tab]].classList.add('active');
     document.getElementById(tab + '-tab').classList.add('active');
 }
@@ -2524,6 +2534,114 @@ function formatGexNum(n) {
     if (abs >= 1e6) return (n / 1e6).toFixed(2) + 'M';
     if (abs >= 1e3) return (n / 1e3).toFixed(1) + 'K';
     return n.toFixed(0);
+}
+
+function tierCard(name, t, borderColor, icon) {
+    if (!t) {
+        return '<div class="card" style="border:1px solid ' + borderColor + '; text-align:center; padding:28px; color:#7d8590;">'
+            + '<div style="font-size:13px; font-weight:700; color:' + borderColor + '; text-transform:uppercase; margin-bottom:8px;">' + icon + ' ' + name + '</div>'
+            + 'No eligible contract in this tier</div>';
+    }
+    const expDate = new Date(t.expiration + 'T00:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}).toUpperCase();
+    const recColor = t.recommendation >= 75 ? '#3fb950' : t.recommendation >= 60 ? '#d29922' : '#f47067';
+    const qualColor = t.quality >= 75 ? '#58a6ff' : '#7d8590';
+    const moneyColor = t.moneyness === 'ITM' ? '#d29922' : '#7d8590';
+    const earningsTag = t.earnings_risk
+        ? '<div style="margin-top:8px;"><span style="font-size:9px; font-weight:700; background:#2b1c1c; color:#f47067; border:1px solid #f47067; border-radius:3px; padding:2px 8px;">⚠ EARNINGS BEFORE EXPIRY</span></div>' : '';
+    const metric = (label, val) => '<div><div style="font-size:9px; color:#7d8590; text-transform:uppercase;">' + label + '</div>'
+        + '<div style="font-size:13px; font-weight:600; color:#e6edf3;">' + val + '</div></div>';
+    return '<div class="card" style="border:1px solid ' + borderColor + '; padding:20px;">'
+        + '<div style="font-size:13px; font-weight:700; color:' + borderColor + '; text-transform:uppercase;">' + icon + ' ' + name + '</div>'
+        + '<div style="font-size:10px; color:#7d8590; margin-bottom:12px;">' + t.tagline + '</div>'
+        + '<div style="font-size:16px; font-weight:700; color:#e6edf3;">' + expDate + ' · $' + t.strike.toLocaleString() + ' ' + t.type.toUpperCase() + '</div>'
+        + '<div style="margin:6px 0 12px;"><span style="font-size:10px; font-weight:700; color:' + moneyColor + ';">' + t.moneyness + '</span> '
+        + '<span style="font-size:20px; font-weight:700; color:#e6edf3;">$' + t.mid.toFixed(2) + '</span> '
+        + '<span style="font-size:10px; color:#484f58;">' + (t.estimated ? 'estimated mid' : 'live mid') + '</span></div>'
+        + '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">'
+        + '<span style="font-size:10px; font-weight:700; border:1px solid ' + recColor + '; color:' + recColor + '; border-radius:5px; padding:3px 8px;">Recommendation ' + t.rec_letter + ' · ' + Math.round(t.recommendation) + '</span>'
+        + '<span style="font-size:10px; font-weight:700; border:1px solid ' + qualColor + '; color:' + qualColor + '; border-radius:5px; padding:3px 8px;">Quality ' + t.quality_letter + ' · ' + Math.round(t.quality) + '</span>'
+        + '<span style="font-size:10px; font-weight:700; border:1px solid #d29922; color:#d29922; border-radius:5px; padding:3px 8px;">Tier fit ' + t.tier_fit + '</span>'
+        + '</div>'
+        + '<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">'
+        + metric('Delta est.', t.delta) + metric('Prob. profit est.', t.prob_profit + '%')
+        + metric('Max risk', '$' + t.max_risk.toLocaleString()) + metric('Breakeven', '$' + t.breakeven.toLocaleString())
+        + metric('IV', t.iv + '%') + metric('Liquidity', t.liquidity_score + '/100')
+        + metric('Open interest', t.oi.toLocaleString()) + metric('Theta/day', '$' + Math.abs(t.theta_day).toFixed(2))
+        + '</div>'
+        + earningsTag
+        + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase; margin-top:14px;">Why this contract</div>'
+        + '<div style="font-size:11px; color:#c9d1d9; line-height:1.6; margin-top:4px;">' + t.why + '</div>'
+        + '<div style="font-size:10px; color:#484f58; line-height:1.5; margin-top:10px;">' + t.rank_note + '</div>'
+        + '</div>';
+}
+
+async function loadGrader(symbol) {
+    let sym = (typeof symbol === 'string' && symbol) ? symbol : null;
+    if (!sym) {
+        const inp = document.getElementById('symbol-input');
+        const v = inp ? inp.value.trim().toUpperCase() : '';
+        if (v) sym = v;
+    }
+    switchTab('grader');
+    document.getElementById('grader-loading').style.display = 'block';
+    document.getElementById('grader-loading').innerHTML = '<div class="spinner"></div><div>Grading ' + (sym || 'SPX') + ' option contracts (confluence + chain analysis)...</div>';
+    document.getElementById('grader-content').style.display = 'none';
+    document.getElementById('grader-error').style.display = 'none';
+    setStatus('Grading option contracts...');
+
+    try {
+        const res = await fetch('/api/options/grade' + (sym ? '?symbol=' + encodeURIComponent(sym) : ''));
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        const isCalls = data.direction === 'CALLS';
+        const dirColor = isCalls ? '#3fb950' : '#f47067';
+        const arrow = isCalls ? '&#x2B06;' : '&#x2B07;';
+        const dirWord = data.directional ? (isCalls ? 'Bullish' : 'Bearish') : 'No directional edge — showing lean';
+        const reasonsHtml = (data.reasons || []).map(r => '<li style="margin:2px 0;">' + r + '</li>').join('');
+        const earningsNote = data.earnings_date
+            ? '<div style="font-size:11px; color:' + (data.earnings_in_days <= 7 ? '#f47067' : '#d29922') + '; margin-top:8px;">Earnings: ' + data.earnings_date + ' (' + data.earnings_in_days + ' days)</div>'
+            : '';
+
+        document.getElementById('grader-content').innerHTML = `
+            <div style="display:grid; grid-template-columns: 1fr 1.6fr; gap:16px; margin-bottom:12px;">
+                <div class="card" style="padding:24px;">
+                    <div style="font-size:10px; color:#7d8590; letter-spacing:1px; text-transform:uppercase;">Grader Recommendation</div>
+                    <div style="font-size:34px; font-weight:800; color:${dirColor}; margin:8px 0;">${arrow} ${data.direction}</div>
+                    <div style="font-size:13px; color:#e6edf3;"><strong>${dirWord}</strong> · Confluence: ${data.signal} (${data.confidence_pct}%)</div>
+                    <ul style="font-size:12px; color:#7d8590; margin:10px 0 0 18px; line-height:1.7;">${reasonsHtml}</ul>
+                    ${earningsNote}
+                </div>
+                <div class="card" style="padding:24px;">
+                    <div style="font-size:15px; font-weight:700; color:#e6edf3; margin-bottom:10px;">Our Take</div>
+                    <div style="font-size:12px; color:#c9d1d9; line-height:1.8;">${data.our_take}</div>
+                </div>
+            </div>
+
+            <div style="background:#2b2611; border:1px solid #d29922; border-radius:6px; padding:10px 16px; font-size:11px; color:#e3c964; margin-bottom:16px;">
+                Long options can lose 100% of the premium. Model estimates are educational and should be verified against your broker's live quote, Greeks, earnings date, and contract specifications.
+            </div>
+
+            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px;">
+                ${tierCard('Conservative', data.tiers.conservative, '#3fb950', '&#x1F6E1;')}
+                ${tierCard('Balanced', data.tiers.balanced, '#d29922', '&#x2696;')}
+                ${tierCard('Aggressive', data.tiers.aggressive, '#f47067', '&#x1F680;')}
+            </div>
+
+            <div class="gex-source" style="margin-top:16px;">
+                ${data.symbol} spot $${data.spot.toLocaleString()} · ${data.chain.quoted} contracts quoted in the ${data.dte_window[0]}–${data.dte_window[1]} DTE window, ${data.chain.eligible} eligible · aggregate OI ${(data.chain.total_oi || 0).toLocaleString()} · ${data.timestamp}
+            </div>
+        `;
+
+        document.getElementById('grader-loading').style.display = 'none';
+        document.getElementById('grader-content').style.display = 'block';
+        setStatus(data.symbol + ' grader: ' + data.direction + ' (' + data.confidence_pct + '%)');
+    } catch (err) {
+        document.getElementById('grader-loading').style.display = 'none';
+        document.getElementById('grader-error').style.display = 'block';
+        document.getElementById('grader-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '<br><br>The symbol may not have listed options, or data may be unavailable outside market hours.</div>';
+        setStatus('Error grading contracts');
+    }
 }
 
 function ladderCell(val, max) {
