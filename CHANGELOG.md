@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.0.1 — NDX Dashboard Gets the Exposure Ladder (2026-08-02)
+
+### Fixed
+- The NDX parallel dashboard's **GEX (QQQ)** sub-tab was still rendering the
+  old net-GEX bar chart. It now shows the same GEX/VEX/DEX dealer exposure
+  ladder as the main GEX tab (spot row, CW/PW/DM walls, vanna bias),
+  scaled from QQQ options to NDX levels. The ladder renderer is now shared
+  (`renderGexDashboard`) so both tabs stay in sync going forward.
+
 ## v2.0.0 — The Any-Ticker Update (2026-08-02)
 
 ### Added
