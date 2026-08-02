@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.1.1 — Per-Ticker Leading Indicators (2026-08-02)
+
+### Fixed
+- The **Leading Indicators — Signal Confidence** panel now follows the analyzed
+  ticker for its two symbol-capable checks: **News Sentiment** and
+  **Multi-Timeframe Heikin-Ashi** (both cards are labeled with the symbol they
+  analyzed). Previously all six checks ran on SPX regardless of the input.
+
+### Notes
+- Crude Oil Correlation is market-level by design. Dealer Positioning,
+  Net Premium Flow, and GEX Regime remain SPX market context until per-symbol
+  options-chain data lands in v1.2.0.
+
 ## v1.1.0 — Any-Ticker Confluence (2026-08-02)
 
 ### Added

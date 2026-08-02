@@ -2708,7 +2708,7 @@ function buildConfidenceDetails(details) {
     const newsSignalColor = news.signal === 1 ? '#3fb950' : (news.signal === -1 ? '#ff7b72' : '#7d8590');
     const newsSignalLabel = news.signal === 1 ? 'BULLISH' : (news.signal === -1 ? 'BEARISH' : 'NEUTRAL');
     html += '<div class="confidence-detail-card">';
-    html += '<div class="confidence-detail-title">1. News Sentiment <span style="color:' + newsSignalColor + '; font-size:11px; margin-left:8px;">' + newsSignalLabel + '</span>';
+    html += '<div class="confidence-detail-title">1. News Sentiment' + (news.symbol ? ' <span style="color:#7d8590; font-size:10px;">(' + news.symbol + ')</span>' : '') + ' <span style="color:' + newsSignalColor + '; font-size:11px; margin-left:8px;">' + newsSignalLabel + '</span>';
     if (news.high_impact_pending) html += ' <span style="background:#4a1111; color:#ff7b72; padding:2px 8px; border-radius:4px; font-size:10px; margin-left:4px;">HIGH IMPACT</span>';
     html += '</div>';
     html += '<div class="confidence-detail-row"><span>Net Sentiment</span><span class="value">' + (news.net_sentiment || 0) + '</span></div>';
@@ -2762,7 +2762,7 @@ function buildConfidenceDetails(details) {
     const mtfSignalColor = mtf.signal === 1 ? '#3fb950' : (mtf.signal === -1 ? '#ff7b72' : '#7d8590');
     const mtfSignalLabel = mtf.signal === 1 ? 'BULLISH' : (mtf.signal === -1 ? 'BEARISH' : 'NEUTRAL');
     html += '<div class="confidence-detail-card">';
-    html += '<div class="confidence-detail-title">4. Multi-Timeframe Heikin-Ashi <span style="color:' + mtfSignalColor + '; font-size:11px; margin-left:8px;">' + mtfSignalLabel + '</span></div>';
+    html += '<div class="confidence-detail-title">4. Multi-Timeframe Heikin-Ashi' + (mtf.symbol ? ' <span style="color:#7d8590; font-size:10px;">(' + mtf.symbol + ')</span>' : '') + ' <span style="color:' + mtfSignalColor + '; font-size:11px; margin-left:8px;">' + mtfSignalLabel + '</span></div>';
     if (mtf.dominant_trend) html += '<div class="confidence-detail-row"><span>Dominant Trend (weighted)</span><span class="value ha-trend-' + mtf.dominant_trend.toLowerCase() + '">' + mtf.dominant_trend + '</span></div>';
     html += '<div class="confidence-detail-row"><span>Weighted Score</span><span class="value"><span style="color:#3fb950;">' + (mtf.bull_weight || 0) + '</span> bull / <span style="color:#ff7b72;">' + (mtf.bear_weight || 0) + '</span> bear (of ' + (mtf.total_weight || 0) + ' max)</span></div>';
     if (mtf.timeframes) {

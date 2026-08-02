@@ -82,6 +82,7 @@ def fetch_news_sentiment(symbol="^GSPC"):
         return cached
 
     result = {
+        "symbol": symbol,
         "headlines": [],
         "net_sentiment": 0.0,
         "high_impact_pending": False,
@@ -445,9 +446,13 @@ def _score_ha_timeframe(df, label):
     }
 
 
-def fetch_multi_timeframe_signals(index='SPX'):
-    """Fetch and score Heikin-Ashi trends across multiple timeframes."""
-    cache_key = f"mtf_signals_{index}"
+def fetch_multi_timeframe_signals(index='SPX', symbol=None):
+    """Fetch and score Heikin-Ashi trends across multiple timeframes.
+
+    Pass ``symbol`` (e.g. "NVDA") to analyze that ticker instead of the
+    index; omitting it preserves the original index-based behavior.
+    """
+    cache_key = f"mtf_signals_{symbol or index}"
     cached = _get_cached(cache_key)
     if cached is not None:
         return cached
@@ -461,8 +466,9 @@ def fetch_multi_timeframe_signals(index='SPX'):
         "warning": None,
     }
 
-    # Choose symbol based on index
-    index_symbol = "^NDX" if index == 'NDX' else "^GSPC"
+    # Choose symbol: explicit ticker wins, else index default
+    index_symbol = symbol or ("^NDX" if index == 'NDX' else "^GSPC")
+    result["symbol"] = index_symbol
 
     # (label, symbol, interval, period, weight)
     # Weekly 3x, Daily 2x, 4-Hour 1x, 90-Min 1x — higher timeframes dominate
@@ -547,8 +553,19 @@ def assess_confidence(confluence_result, index='SPX'):
     """
     direction = confluence_result.get("signal", "NO SIGNAL")
 
-    # Determine news symbol based on index
-    news_symbol = "^NDX" if index == 'NDX' else "^GSPC"
+    # Per-ticker awareness: when the confluence result was computed for a
+    # custom symbol (e.g. "NVDA"), point the symbol-capable leading
+    # indicators (news, multi-timeframe) at that ticker. Market-level
+    # indicators (crude, GEX, net premium, dealer positioning) stay on the
+    # index until per-symbol chain data lands (v1.2.0).
+    result_symbol = confluence_result.get("symbol")
+    if result_symbol in ('^NDX', 'QQQ'):
+        index = 'NDX'
+    custom_symbol = result_symbol if result_symbol not in (
+        None, '', '^GSPC', '^SPX', '^NDX', 'SPX', 'NDX') else None
+
+    # Determine news symbol: custom ticker wins, else index default
+    news_symbol = custom_symbol or ("^NDX" if index == 'NDX' else "^GSPC")
 
     # Import net premium signal
     try:
@@ -573,7 +590,7 @@ def assess_confidence(confluence_result, index='SPX'):
         news = fetch_news_sentiment(symbol=news_symbol)
         crude = fetch_crude_correlation()
         positioning = fetch_dealer_positioning(index=index)
-        mtf = fetch_multi_timeframe_signals(index=index)
+        mtf = fetch_multi_timeframe_signals(index=index, symbol=custom_symbol)
         return _sanitize({
             "grade": "N/A",
             "grade_class": "neutral",
@@ -595,7 +612,7 @@ def assess_confidence(confluence_result, index='SPX'):
     news = fetch_news_sentiment(symbol=news_symbol)
     crude = fetch_crude_correlation()
     positioning = fetch_dealer_positioning(index=index)
-    mtf = fetch_multi_timeframe_signals(index=index)
+    mtf = fetch_multi_timeframe_signals(index=index, symbol=custom_symbol)
 
     # Count conflicts
     indicators = [
