@@ -29,3 +29,9 @@ Thumbs.db
 
 # Trade log (personal trade history — not committed)
 trade_log.json
+
+# Personal portfolio data (use portfolio.example.json as a template)
+portfolio.json
+
+# Local Claude Code settings
+.claude/
