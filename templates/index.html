@@ -2660,6 +2660,9 @@ async function loadGrader(symbol) {
         document.getElementById('grader-loading').style.display = 'none';
         document.getElementById('grader-content').style.display = 'block';
         setStatus(data.symbol + ' grader: ' + data.direction + ' (' + data.confidence_pct + '%)');
+
+        // The 0-30 DTE options dashboard follows the graded ticker
+        try { loadOptions(data.symbol); } catch (e) {}
     } catch (err) {
         document.getElementById('grader-loading').style.display = 'none';
         document.getElementById('grader-error').style.display = 'block';
@@ -3818,10 +3821,14 @@ async function loadOptions(underlying) {
     switchTab('options');
     // Default to whatever the dropdown currently shows, fallback SPX
     if (!underlying) underlying = document.getElementById('contract-underlying')?.value || 'SPX';
+    underlying = String(underlying).toUpperCase();
     const useNdx = (underlying === 'NDX' || underlying === 'QQQ');
-    const apiUrl  = useNdx ? '/api/options?index=NDX' : '/api/options';
-    const liveUrl = useNdx ? '/api/live?symbol=^NDX'  : '/api/live';
-    const label   = underlying; // SPX, NDX, or QQQ
+    const isCustom = !['SPX', '^GSPC', '^SPX', 'NDX', '^NDX', 'QQQ'].includes(underlying);
+    const apiUrl  = isCustom ? '/api/options?symbol=' + encodeURIComponent(underlying)
+                  : useNdx ? '/api/options?index=NDX' : '/api/options';
+    const liveUrl = isCustom ? '/api/live?symbol=' + encodeURIComponent(underlying)
+                  : useNdx ? '/api/live?symbol=^NDX'  : '/api/live';
+    const label   = underlying; // SPX, NDX, QQQ, or any custom ticker
 
     document.getElementById('options-loading').style.display = 'block';
     document.getElementById('options-loading').innerHTML = '<div class="spinner"></div><div>Loading ' + label + ' options analysis...</div>';
