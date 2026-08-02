@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.1 — Grader Consolidation + Layout Cleanup (2026-08-02)
+
+### Changed
+- **Grader moved into the Options tab** (standalone Grader tab removed):
+  the A–F contract grader now sits directly above the Contract Analyzer,
+  with its **own ticker input** and "Grade Contracts" button — no more
+  dependence on the global Analyze flow (which navigates to Confluence).
+- **Prominent symbol headline** on grader results: a large SYMBOL · $spot ·
+  direction banner makes it unmistakable which ticker was graded.
+- **Scaled Entry Checklist moved to the Risk Calc tab**, grouping the
+  pre-trade sizing/confirmation tools together.
+
 ## v1.3.0 — Options Contract Grader (2026-08-02)
 
 ### Added
