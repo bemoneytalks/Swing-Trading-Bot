@@ -21,10 +21,10 @@ from scipy.stats import norm
 
 import config
 from chain_service import get_chain, chain_stats
+from earnings import get_next_earnings as _get_next_earnings
 from gex import black_scholes_delta, RISK_FREE_RATE
 
 # In-memory caches (per process)
-_earnings_cache = {}   # symbol -> (datetime|None, ts)
 _hist_cache = {}       # symbol -> (dict, ts)
 _CACHE_TTL = 6 * 3600
 
@@ -65,36 +65,6 @@ def _prob_beyond_breakeven(S, breakeven, T, sigma, option_type):
         return float(norm.cdf(-z))
     except (ValueError, ZeroDivisionError):
         return 0.0
-
-
-def _get_next_earnings(symbol):
-    """Next earnings datetime for symbol, or None. Cached 6h. Index symbols
-    have no earnings."""
-    if symbol.startswith("^"):
-        return None
-    now = time.time()
-    if symbol in _earnings_cache:
-        val, ts = _earnings_cache[symbol]
-        if now - ts < _CACHE_TTL:
-            return val
-    result = None
-    try:
-        cal = yf.Ticker(symbol).calendar
-        dates = None
-        if isinstance(cal, dict):
-            dates = cal.get("Earnings Date")
-        elif cal is not None and hasattr(cal, "loc"):
-            try:
-                dates = list(cal.loc["Earnings Date"])
-            except Exception:
-                dates = None
-        if dates:
-            first = dates[0] if isinstance(dates, (list, tuple)) else dates
-            result = datetime(first.year, first.month, first.day)
-    except Exception:
-        result = None
-    _earnings_cache[symbol] = (result, now)
-    return result
 
 
 def _get_underlying_stats(symbol):
