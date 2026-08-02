@@ -2704,25 +2704,7 @@ function ladderCell(val, max) {
         + '</div></div>';
 }
 
-async function loadGex(symbol) {
-    let sym = (typeof symbol === 'string' && symbol) ? symbol : null;
-    if (!sym) {
-        const inp = document.getElementById('symbol-input');
-        const v = inp ? inp.value.trim().toUpperCase() : '';
-        if (v && !['SPX', '^GSPC', '^SPX', 'NDX', '^NDX'].includes(v)) sym = v;
-    }
-    switchTab('gex');
-    document.getElementById('gex-loading').style.display = 'block';
-    document.getElementById('gex-loading').innerHTML = '<div class="spinner"></div><div>Fetching ' + (sym || 'SPX') + ' options chain & calculating dealer exposure...</div>';
-    document.getElementById('gex-content').style.display = 'none';
-    document.getElementById('gex-error').style.display = 'none';
-    setStatus('Calculating dealer exposure...');
-
-    try {
-        const res = await fetch('/api/gex' + (sym ? '?symbol=' + encodeURIComponent(sym) : ''));
-        const data = await res.json();
-
-        if (!data.success) throw new Error(data.error);
+function renderGexDashboard(data, prefix) {
 
         const dealerClass = data.dealer_position === 'LONG GAMMA' ? 'long-gamma' : 'short-gamma';
         const label = data.symbol || 'SPX';
@@ -2809,7 +2791,7 @@ async function loadGex(symbol) {
         const vannaBias = (data.total_vex || 0) >= 0 ? 'SUPPORTIVE' : 'FRAGILE';
         const vannaColor = (data.total_vex || 0) >= 0 ? '#3fb950' : '#f47067';
 
-        document.getElementById('gex-content').innerHTML = `
+        document.getElementById(prefix + '-content').innerHTML = `
             <div class="signal-card">
                 <div class="signal-date">Dealer Exposure Analysis — GEX / VEX / DEX</div>
                 <div style="font-size:11px; color:#484f58; margin-bottom:16px;">${data.timestamp} | Source: ${data.data_source} | ${data.expirations_used} expirations</div>
@@ -2911,9 +2893,31 @@ async function loadGex(symbol) {
             </div>
         `;
 
-        document.getElementById('gex-loading').style.display = 'none';
-        document.getElementById('gex-content').style.display = 'block';
+        document.getElementById(prefix + '-loading').style.display = 'none';
+        document.getElementById(prefix + '-content').style.display = 'block';
         setStatus(label + ' exposure loaded - Dealers ' + data.dealer_position);
+}
+
+async function loadGex(symbol) {
+    let sym = (typeof symbol === 'string' && symbol) ? symbol : null;
+    if (!sym) {
+        const inp = document.getElementById('symbol-input');
+        const v = inp ? inp.value.trim().toUpperCase() : '';
+        if (v && !['SPX', '^GSPC', '^SPX', 'NDX', '^NDX'].includes(v)) sym = v;
+    }
+    switchTab('gex');
+    document.getElementById('gex-loading').style.display = 'block';
+    document.getElementById('gex-loading').innerHTML = '<div class="spinner"></div><div>Fetching ' + (sym || 'SPX') + ' options chain & calculating dealer exposure...</div>';
+    document.getElementById('gex-content').style.display = 'none';
+    document.getElementById('gex-error').style.display = 'none';
+    setStatus('Calculating dealer exposure...');
+
+    try {
+        const res = await fetch('/api/gex' + (sym ? '?symbol=' + encodeURIComponent(sym) : ''));
+        const data = await res.json();
+
+        if (!data.success) throw new Error(data.error);
+        renderGexDashboard(data, 'gex');
     } catch (err) {
         document.getElementById('gex-loading').style.display = 'none';
         document.getElementById('gex-error').style.display = 'block';
@@ -5544,10 +5548,10 @@ let ndxGexChartInstance = null;
 async function loadNdxGex() {
     switchNdxSubTab('gex');
     document.getElementById('ndx-gex-loading').style.display = 'block';
-    document.getElementById('ndx-gex-loading').innerHTML = '<div class="spinner"></div><div>Fetching QQQ options data & calculating NDX GEX...</div>';
+    document.getElementById('ndx-gex-loading').innerHTML = '<div class="spinner"></div><div>Fetching QQQ options chain & calculating NDX dealer exposure...</div>';
     document.getElementById('ndx-gex-content').style.display = 'none';
     document.getElementById('ndx-gex-error').style.display = 'none';
-    setStatus('Calculating NDX gamma exposure...');
+    setStatus('Calculating NDX dealer exposure...');
 
     try {
         const res = await fetch('/api/gex?index=NDX');
@@ -5555,157 +5559,7 @@ async function loadNdxGex() {
 
         if (!data.success) throw new Error(data.error);
 
-        const dealerClass = data.dealer_position === 'LONG GAMMA' ? 'long-gamma' : 'short-gamma';
-
-        // Build bar chart
-        const maxGex = Math.max(...data.chart_net_gex.map(v => Math.abs(v)), 1);
-        let barsHtml = '';
-        let labelsHtml = '';
-        const spotIdx = data.chart_strikes.findIndex(s => s >= data.spot);
-
-        // Calculate label interval
-        const totalStrikes = data.chart_strikes.length;
-        const labelInterval = Math.max(1, Math.round(totalStrikes / 10));
-
-        data.chart_net_gex.forEach((gex, i) => {
-            const pct = Math.abs(gex) / maxGex * 100;
-            const isPos = gex >= 0;
-            const isSpot = i === spotIdx;
-            const strike = data.chart_strikes[i];
-            const showGridline = i % labelInterval === 0 && i !== 0;
-            const gexFormatted = formatGexNum(gex);
-            const valClass = isPos ? 'tt-pos' : 'tt-neg';
-
-            barsHtml += `
-                <div class="gex-bar-group${showGridline ? ' has-gridline' : ''}" >
-                    <div class="gex-tooltip">
-                        <span class="tt-strike">${strike.toLocaleString()}</span><br>
-                        Net GEX: <span class="tt-value ${valClass}">${gexFormatted}</span>
-                    </div>
-                    ${isSpot ? '<div class="gex-spot-marker"></div>' : ''}
-                    <div class="gex-bar ${isPos ? 'positive' : 'negative'}" style="height:${pct}%"></div>
-                </div>`;
-
-            const showLabel = i % labelInterval === 0;
-            labelsHtml += `<div class="gex-bar-label">${showLabel ? strike.toLocaleString() : ''}</div>`;
-        });
-
-        // Top gamma strikes tables
-        let callRows = data.top_call_gamma.map(s =>
-            `<tr><td>${s.strike.toLocaleString()}</td><td class="green">${formatGexNum(s.gex)}</td></tr>`
-        ).join('');
-        let putRows = data.top_put_gamma.map(s =>
-            `<tr><td>${s.strike.toLocaleString()}</td><td class="red">${formatGexNum(s.gex)}</td></tr>`
-        ).join('');
-
-        // Per-expiry rows
-        let expiryRows = '';
-        data.per_expiry.forEach(function(e) {
-            const rowStyle = e.is_monthly ? 'background:#1a1520;' : '';
-            const dealerColor = e.dealer_position === 'LONG GAMMA' ? 'green' : 'red';
-            const typeTag = e.is_monthly ? '<span class="tag neutral">OPEX</span>' : 'Weekly';
-            const netColor = e.net_gex >= 0 ? 'green' : 'red';
-            const topStrike = e.top_strike ? e.top_strike.toLocaleString() : '-';
-            expiryRows += '<tr style="' + rowStyle + '">'
-                + '<td>' + e.date + '</td>'
-                + '<td>' + e.dte + '</td>'
-                + '<td>' + typeTag + '</td>'
-                + '<td class="green">' + formatGexNum(e.call_gex) + '</td>'
-                + '<td class="red">' + formatGexNum(e.put_gex) + '</td>'
-                + '<td class="' + netColor + '">' + formatGexNum(e.net_gex) + '</td>'
-                + '<td class="' + dealerColor + '">' + e.dealer_position + '</td>'
-                + '<td>' + topStrike + '</td>'
-                + '</tr>';
-        });
-
-        document.getElementById('ndx-gex-content').innerHTML = `
-            <div class="signal-card">
-                <div class="signal-date">NDX/QQQ Gamma Exposure Analysis <span class="ndx-badge" style="vertical-align:middle;">NDX</span></div>
-                <div style="font-size:11px; color:#484f58; margin-bottom:16px;">${data.timestamp} | Source: ${data.data_source} | ${data.expirations_used} expirations</div>
-                <div class="signal-close"><span>NDX</span> ${data.spot.toLocaleString()}</div>
-                <div class="gex-dealer-badge ${dealerClass}">${data.dealer_position}</div>
-                <div class="gex-implication">${data.dealer_implication}</div>
-            </div>
-
-            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px; margin-bottom:24px;">
-                <div class="card" style="text-align:center;">
-                    <div class="gex-level-label">GEX FLIP LEVEL</div>
-                    <div class="gex-level-value" style="color:#d29922;">${data.gex_flip ? data.gex_flip.toLocaleString() : 'N/A'}</div>
-                    <div class="gex-level-label">Price where dealers switch positioning</div>
-                </div>
-                <div class="card" style="text-align:center;">
-                    <div class="gex-level-label">GAMMA SUPPORT</div>
-                    <div class="gex-level-value" style="color:#3fb950;">${data.gamma_support ? data.gamma_support.toLocaleString() : 'N/A'}</div>
-                    <div class="gex-level-label">Highest gamma strike below spot</div>
-                </div>
-                <div class="card" style="text-align:center;">
-                    <div class="gex-level-label">GAMMA RESISTANCE</div>
-                    <div class="gex-level-value" style="color:#f47067;">${data.gamma_resistance ? data.gamma_resistance.toLocaleString() : 'N/A'}</div>
-                    <div class="gex-level-label">Highest gamma strike above spot</div>
-                </div>
-            </div>
-
-            <div class="card" style="margin-bottom:24px;">
-                <div class="card-title">Net GEX by Strike <span style="color:#d29922; font-weight:400;">(yellow line = spot)</span></div>
-                <div class="gex-bar-chart">${barsHtml}</div>
-                <div class="gex-bar-labels">${labelsHtml}</div>
-            </div>
-
-            <div class="card" style="margin-bottom:24px;">
-                <div class="card-title">GEX by Expiration Date</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Expiration</th>
-                            <th>DTE</th>
-                            <th>Type</th>
-                            <th>Call GEX</th>
-                            <th>Put GEX</th>
-                            <th>Net GEX</th>
-                            <th>Dealer</th>
-                            <th>Top Strike</th>
-                        </tr>
-                    </thead>
-                    <tbody>${expiryRows}</tbody>
-                </table>
-            </div>
-
-            <div class="grid">
-                <div class="card">
-                    <div class="card-title">Top Call Gamma Strikes (Resistance)</div>
-                    <table>
-                        <thead><tr><th>Strike</th><th>GEX</th></tr></thead>
-                        <tbody>${callRows}</tbody>
-                    </table>
-                </div>
-                <div class="card">
-                    <div class="card-title">Top Put Gamma Strikes (Support)</div>
-                    <table>
-                        <thead><tr><th>Strike</th><th>GEX</th></tr></thead>
-                        <tbody>${putRows}</tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="card" style="margin-top:16px;">
-                <div class="card-title">How to Read GEX</div>
-                <div class="metric"><span class="metric-label">Total Net GEX</span><span class="metric-value">${formatGexNum(data.total_gex)}</span></div>
-                <div style="font-size:12px; color:#7d8590; margin-top:12px; line-height:1.8;">
-                    <strong style="color:#3fb950;">Dealers LONG gamma (positive GEX):</strong> They sell into rallies and buy dips. Market tends to be pinned, lower volatility, mean-reverting.<br>
-                    <strong style="color:#f47067;">Dealers SHORT gamma (negative GEX):</strong> They buy rallies and sell dips (amplifying moves). Market trends harder, higher volatility, breakout-prone.<br>
-                    <strong style="color:#d29922;">GEX Flip Level:</strong> The strike where dealer positioning flips. Above it = long gamma environment. Below it = short gamma. Acts as a magnet.<br>
-                    <strong>Gamma Support/Resistance:</strong> Strikes with highest absolute gamma act as magnets and walls. Price tends to gravitate toward high-gamma strikes.
-                </div>
-            </div>
-
-            <div class="gex-source">
-                Data is delayed ~15-20 min via Yahoo Finance. This is an estimate, not institutional-grade GEX. QQQ options used as NDX proxy.
-            </div>
-        `;
-
-        document.getElementById('ndx-gex-loading').style.display = 'none';
-        document.getElementById('ndx-gex-content').style.display = 'block';
-        setStatus(`NDX GEX loaded - Dealers ${data.dealer_position}`);
+        renderGexDashboard(data, 'ndx-gex');
     } catch (err) {
         document.getElementById('ndx-gex-loading').style.display = 'none';
         document.getElementById('ndx-gex-error').style.display = 'block';
@@ -5714,7 +5568,6 @@ async function loadNdxGex() {
     }
 }
 
-// ── NDX Backtest ──────────────────────────────────────────────────
 async function loadNdxBacktest() {
     switchNdxSubTab('backtest');
     document.getElementById('ndx-backtest-loading').style.display = 'block';
