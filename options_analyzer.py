@@ -11,10 +11,16 @@ from scipy.stats import norm
 import ta
 
 
-def _fetch_options_data(symbol="^SPX", index='SPX'):
-    """Fetch current options chain and price data."""
+def _fetch_options_data(symbol="^SPX", index='SPX', strict=False):
+    """Fetch current options chain and price data.
+
+    strict=True: try only the given symbol (any-ticker mode) — no index
+    fallbacks, so a bad symbol errors instead of silently showing SPX.
+    """
+    if strict:
+        candidates = [symbol]
     # For NDX, use QQQ as primary (more liquid options), fallback to ^NDX
-    if index == 'NDX':
+    elif index == 'NDX':
         candidates = ["QQQ", "^NDX"]
     else:
         candidates = [symbol, "^GSPC", "^SPX"]
@@ -85,12 +91,17 @@ def _calculate_greeks(S, K, T, r, sigma, option_type="call"):
     }
 
 
-def analyze_spx_options(index='SPX'):
+def analyze_spx_options(index='SPX', symbol=None):
     """
-    Full SPX/NDX options analysis for 0DTE-30DTE trading.
+    Full options analysis for 0DTE-30DTE trading.
+    Default: SPX/NDX index dashboards (original behavior). Pass ``symbol``
+    (e.g. "NVDA") to run the same analysis on any optionable ticker.
     Returns comprehensive data for the dashboard.
     """
-    data = _fetch_options_data(index=index)
+    if symbol:
+        data = _fetch_options_data(symbol=symbol.upper(), strict=True)
+    else:
+        data = _fetch_options_data(index=index)
     if data is None:
         return None
 
@@ -103,7 +114,7 @@ def analyze_spx_options(index='SPX'):
 
     # For NDX: QQQ is used for options chain (P/C, skew) but all price/vol
     # calculations must use actual ^NDX data — QQQ trades at ~1/40th NDX scale.
-    if index == 'NDX':
+    if index == 'NDX' and not symbol:
         try:
             ndx_tk = yf.Ticker("^NDX")
             ndx_hist = ndx_tk.history(period="6mo")
@@ -121,8 +132,9 @@ def analyze_spx_options(index='SPX'):
     result = {
         "spot": round(spot, 2),
         "prev_close": round(prev_close, 2),
-        "data_source": "^NDX (opts via QQQ)" if index == 'NDX' else data["symbol"],
+        "data_source": data["symbol"] if symbol else ("^NDX (opts via QQQ)" if index == 'NDX' else data["symbol"]),
         "index": index,
+        "symbol": (symbol or index).upper().lstrip("^"),
         "timestamp": datetime.now().strftime("%H:%M:%S"),
     }
 
@@ -251,16 +263,23 @@ def analyze_spx_options(index='SPX'):
 
     # --- Optimal Strike Selection ---
     # Suggest strikes for different strategies
-    # NDX uses 25-point increments; SPX uses 5-point increments
-    sr = 25 if index == 'NDX' else 5
+    # Strike increment: NDX 25pt, SPX 5pt; custom tickers by price scale
+    if symbol:
+        sr = 25 if spot >= 10000 else 5 if spot >= 1000 else \
+             2.5 if spot >= 250 else 1 if spot >= 50 else 0.5
+    else:
+        sr = 25 if index == 'NDX' else 5
     atm = round(spot / sr) * sr
 
+    def _snap(x):
+        return int(x) if float(x).is_integer() else round(x, 2)
+
     result["suggested_strikes"] = {
-        "atm": int(atm),
-        "otm_call_1": int(atm + round(em_1d / sr) * sr),   # ~1 SD OTM call
-        "otm_put_1":  int(atm - round(em_1d / sr) * sr),   # ~1 SD OTM put
-        "otm_call_2": int(atm + round(em_5d / sr) * sr),   # ~1 SD weekly call
-        "otm_put_2":  int(atm - round(em_5d / sr) * sr),   # ~1 SD weekly put
+        "atm": _snap(atm),
+        "otm_call_1": _snap(atm + round(em_1d / sr) * sr),   # ~1 SD OTM call
+        "otm_put_1":  _snap(atm - round(em_1d / sr) * sr),   # ~1 SD OTM put
+        "otm_call_2": _snap(atm + round(em_5d / sr) * sr),   # ~1 SD weekly call
+        "otm_put_2":  _snap(atm - round(em_5d / sr) * sr),   # ~1 SD weekly put
     }
 
     # --- Greeks Snapshot for ATM options ---

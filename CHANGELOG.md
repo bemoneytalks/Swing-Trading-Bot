@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.2 — Options Dashboard Follows the Graded Ticker (2026-08-02)
+
+### Changed
+- The **0–30 DTE Options Dashboard** (IV rank, skew, technicals, suggested
+  strikes, pivots, ATM greeks, strategy suggestions) is no longer
+  SPX/NDX-only: grade any ticker and the dashboard reloads for that symbol
+  ("NVDA Options Dashboard"), with strike increments inferred from price
+  scale. `/api/options` accepts `?symbol=`.
+- The Contract Analyzer's SPX/QQQ/NDX dropdown flow is unchanged.
+
 ## v1.3.1 — Grader Consolidation + Layout Cleanup (2026-08-02)
 
 ### Changed

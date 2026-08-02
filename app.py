@@ -759,7 +759,11 @@ def api_options_contract():
 def api_options():
     try:
         index = _get_index()
-        result = analyze_spx_options(index=index)
+        symbol = _get_symbol()
+        custom_symbol = symbol if symbol not in (None, '^GSPC', '^NDX') else None
+        if symbol == '^NDX':
+            index = 'NDX'
+        result = analyze_spx_options(index=index, symbol=custom_symbol)
         if result is None:
             return jsonify({"success": False, "error": f"Could not fetch {index} options data"})
         result["success"] = True
