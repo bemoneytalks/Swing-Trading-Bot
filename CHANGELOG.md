@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.0.2 — Dynamic Confluence Tab + Tab Reorder (2026-08-02)
+
+### Changed
+- **The first tab now shows what it's analyzing.** It reads "SPX" by
+  default and becomes the active ticker (e.g. "NVDA ✕") when you Analyze a
+  custom symbol; clicking ✕ (or the header SPX button) returns to the SPX
+  default. This makes the any-ticker Confluence feature — present since
+  v1.1.0 — actually discoverable.
+- **Tab order reorganized**: SPX / NDX / Options / ML Signal / GEX /
+  Risk Calc / Scanner / Patterns / Backtest.
+- Tab switching now uses data-tab attributes instead of a fragile
+  index-based map (future tab changes can no longer break highlighting).
+
 ## v2.0.1 — NDX Dashboard Gets the Exposure Ladder (2026-08-02)
 
 ### Fixed

@@ -1277,16 +1277,16 @@
 </div>
 
 <div class="container">
-    <div class="tabs">
-        <button class="tab active" onclick="loadConfluence()">SPX</button>
-        <button class="tab" onclick="loadNdxDashboard()" id="ndx-main-tab">NDX</button>
-        <button class="tab" onclick="loadOptions()">Options</button>
-        <button class="tab" onclick="switchTab('risk')">Risk Calc</button>
-        <button class="tab" onclick="loadScan()">Scanner</button>
-        <button class="tab" onclick="switchTab('patterns')">Patterns</button>
-        <button class="tab" onclick="loadPrediction()">ML Signal</button>
-        <button class="tab" onclick="loadGex()">GEX</button>
-        <button class="tab" onclick="loadBacktest()">Backtest</button>
+    <div class="tabs" id="main-tabs">
+        <button class="tab active" data-tab="confluence" onclick="loadConfluence(activeConfSymbol)"><span id="main-symbol-label">SPX</span><span id="main-symbol-clear" title="Back to SPX" onclick="event.stopPropagation(); clearActiveSymbol();" style="display:none; margin-left:7px; color:#7d8590; font-weight:700;">&times;</span></button>
+        <button class="tab" data-tab="ndx" onclick="loadNdxDashboard()" id="ndx-main-tab">NDX</button>
+        <button class="tab" data-tab="options" onclick="loadOptions()">Options</button>
+        <button class="tab" data-tab="signal" onclick="loadPrediction()">ML Signal</button>
+        <button class="tab" data-tab="gex" onclick="loadGex()">GEX</button>
+        <button class="tab" data-tab="risk" onclick="switchTab('risk')">Risk Calc</button>
+        <button class="tab" data-tab="scanner" onclick="loadScan()">Scanner</button>
+        <button class="tab" data-tab="patterns" onclick="switchTab('patterns')">Patterns</button>
+        <button class="tab" data-tab="backtest" onclick="loadBacktest()">Backtest</button>
         <div style="margin-left:auto; display:flex; gap:6px; align-items:center; padding:4px 0;">
             <input type="text" id="symbol-input" placeholder="Any ticker (e.g. NVDA)"
                    style="width:140px; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#e6edf3; padding:6px 10px; font-size:12px;"
@@ -1901,9 +1901,26 @@ function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
 
-    const tabMap = { confluence: 0, ndx: 1, options: 2, risk: 3, scanner: 4, patterns: 5, signal: 6, gex: 7, backtest: 8 };
-    document.querySelectorAll('.tab')[tabMap[tab]].classList.add('active');
+    const btn = document.querySelector('#main-tabs .tab[data-tab="' + tab + '"]');
+    if (btn) btn.classList.add('active');
     document.getElementById(tab + '-tab').classList.add('active');
+}
+
+let activeConfSymbol = null;
+
+function setMainTabSymbol(sym) {
+    activeConfSymbol = sym || null;
+    const lab = document.getElementById('main-symbol-label');
+    const clr = document.getElementById('main-symbol-clear');
+    if (lab) lab.textContent = sym || 'SPX';
+    if (clr) clr.style.display = sym ? 'inline' : 'none';
+}
+
+function clearActiveSymbol() {
+    const inp = document.getElementById('symbol-input');
+    if (inp) inp.value = '';
+    setMainTabSymbol(null);
+    loadConfluence();
 }
 
 function analyzeSymbol() {
@@ -3128,6 +3145,7 @@ function buildDualIndicatorPanel(data, indicatorRows) {
 
 async function loadConfluence(symbol) {
     const sym = (typeof symbol === 'string' && symbol) ? symbol : null;
+    setMainTabSymbol(sym);
     switchTab('confluence');
     document.getElementById('confluence-loading').style.display = 'block';
     document.getElementById('confluence-loading').innerHTML = '<div class="spinner"></div><div>Analyzing ' + (sym || 'SPX') + ' confluence indicators...</div>';
