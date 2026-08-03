@@ -1,6 +1,9 @@
 # Swing Trade Bot
 
-A real-time S&P 500 / Nasdaq-100 trading research dashboard combining dual machine learning signals, a 12-indicator context-aware confluence engine, options analytics, gamma exposure mapping, chart pattern detection, and portfolio tracking — all in a single browser-based interface.
+A real-time swing-trading research dashboard for **any ticker** — combining dual machine-learning signals (trained on demand per symbol), a 12-indicator context-aware confluence engine, an A–F options contract grader, a GEX/VEX/DEX dealer exposure ladder, options analytics, and chart pattern detection — all in a single browser-based interface. SPX and NDX remain first-class defaults.
+
+**The Any-Ticker workflow** — type a symbol once and every engine follows it:
+Confluence says *whether and which direction* → the GEX/VEX/DEX ladder says *where the dealer walls are* → the Grader says *which contract* → the Contract Analyzer says *your specific odds* → the ML Signal adds *model probabilities* → the Exit engine says *when to get out*.
 
 ![Python](https://img.shields.io/badge/Python-3.9+-blue)
 ![Flask](https://img.shields.io/badge/Flask-3.x-green)
@@ -8,17 +11,19 @@ A real-time S&P 500 / Nasdaq-100 trading research dashboard combining dual machi
 
 ## Features
 
+Type any ticker into the input on the tab bar and hit **Analyze** — the first tab's label follows the active symbol (click ✕ to return to SPX).
+
 | Tab | Description |
 |-----|-------------|
-| **SPX** | Dual-panel system: **Trend System** (12-indicator context-aware engine — fires ENTER LONG/SHORT at 8+/12, STAY at 6–7, LEAN at 5) and **Reversal Entry** (6 contrarian indicators that catch bottoms/tops the trend system misses). Includes GEX Flip ⚡ and Flow Flip ⚡ event badges, Fast Pullback/Breakout Alert, trend context label (UPTREND/DOWNTREND/RANGE), and 6 leading confidence indicators. |
-| **NDX** | Same 12-indicator confluence engine for Nasdaq-100. Sub-tabs: Confluence, QQQ Options (with Contract Analyzer), ML Signal, GEX, Backtest. |
-| **Options** | Full SPX/NDX options chain analysis — Greeks (delta, gamma, theta, vega), IV surface, 0DTE-30DTE premium decay, implied move, key strike levels. Includes Scaled Entry Checklist and Trade Card Enforcer. |
-| **Portfolio** | Track open positions with real-time P&L, exit signals, stop/target alerts, position sizing calculator, and trade history. |
+| **SPX / _any ticker_** | Dual-panel system for the active symbol: **Trend System** (12-indicator context-aware engine — fires ENTER LONG/SHORT at 8+/12, STAY at 6–7, LEAN at 5) and **Reversal Entry** (6 contrarian indicators that catch bottoms/tops the trend system misses). Includes GEX Flip ⚡ and Flow Flip ⚡ event badges, Fast Pullback/Breakout Alert, trend context label (UPTREND/DOWNTREND/RANGE), and 6 leading confidence indicators (news sentiment, multi-timeframe Heikin-Ashi, GEX regime, and dealer positioning all follow the ticker). |
+| **NDX** | Same 12-indicator confluence engine for Nasdaq-100. Sub-tabs: Confluence, QQQ Options (with Contract Analyzer), ML Signal, GEX (QQQ-scaled exposure ladder), Backtest. |
+| **Options** | The contract workflow for the active symbol: **A–F Options Contract Grader** (three risk tiers with Recommendation/Quality/Tier-fit scores and an earnings guard), **Contract Analyzer** (probability of profit, P&L scenarios, target-exit odds on a specific trade), and the **0–30 DTE Options Dashboard** (IV rank, put/call skew, suggested strikes, pivots, ATM Greeks, strategy suggestions) — all following the graded ticker. Includes the Trade Card Enforcer. |
+| **ML Signal** | **Dual ML system for any ticker**: next-day candle direction + 5-day swing trend (hybrid ML + 8-factor rules score), shown side-by-side with an alignment indicator. First use of a new ticker trains its dedicated model (~1–3 min, then cached). Single-stock signals show the next earnings date and are flagged near earnings. |
+| **GEX** | **GEX / VEX / DEX dealer exposure ladder** by strike for any ticker — synced gamma, vanna, and delta exposure columns with a highlighted spot row, call wall / put wall / delta magnet badges, vanna bias, flip level, per-expiry breakdown, and dealer positioning. |
+| **Risk Calc** | Pre-trade station: **Scaled Entry Checklist** (5-point tiered position sizing) + **Position Size Calculator** (risk-based share sizing off account %, entry, and stop). |
 | **Scanner** | Batch confluence scan across 38–570 tickers. Filter by signal type (ENTER LONG, ENTER SHORT, STAY LONG, STAY SHORT, LEAN). |
 | **Patterns** | AskLivermore-style chart pattern detection across 15 patterns (5 per phase) with A+ to B quality grading, entry zone, stop, target, and R:R. Scans 38–570 tickers. |
-| **ML Signal** | **Dual ML system**: tomorrow's candle direction (55%+ accuracy) + 5-day swing trend (hybrid ML + 8-factor rules score). Both signals shown side-by-side with alignment indicator. |
-| **GEX** | Dealer gamma exposure by strike with full-price labels, gridlines, and hover tooltips. Shows GEX flip level, key gamma concentrations, and dealer positioning. |
-| **Backtest** | Last 30 days of ML predictions vs. actual outcomes with cumulative accuracy tracking. |
+| **Backtest** | Last 30 days of ML predictions vs. actual outcomes for the active symbol's model, with overall and high-confidence accuracy. |
 
 ## Quick Start
 
@@ -43,7 +48,7 @@ python3 app.py
 
 Open **http://localhost:5050** in your browser.
 
-On first load, both ML models will auto-train using 5 years of SPX daily data from Yahoo Finance (~1,250 trading days). This takes about 60 seconds.
+On first load, both SPX ML models auto-train using 5 years of daily data from Yahoo Finance (~1,250 trading days) — about 60 seconds. The first time you request an ML Signal for any other ticker, a dedicated model trains for it the same way (~1–3 minutes, then cached under `model/`).
 
 **macOS tip**: Double-click `start_dashboard.command` in Finder to start the server and auto-open the browser.
 
@@ -239,9 +244,32 @@ A 5-point scoring system that auto-populates from live market data and determine
 
 Forces a written plan before every entry. Unlocked automatically when checklist score ≥ 2.5 (STARTER). Required fields: contract details, trade thesis, exit targets (T1/T2/T3 SPX levels + stop), and max risk auto-validated against the 2% account rule.
 
-### GEX Chart
+### GEX / VEX / DEX Exposure Ladder
 
-Net GEX by Strike chart with full strike price labels, dashed vertical gridlines, and hover tooltips. Shows GEX flip level and dealer positioning regime.
+Per-strike dealer exposure for any optionable ticker, three synced columns:
+
+- **GEX (gamma)** — positive: dealers sell rallies / buy dips (pinning, mean reversion); negative: dealers amplify moves (trend, volatility)
+- **VEX (vanna)** — how dealer hedges shift when implied volatility moves; net-positive = falling IV fuels rallies (**VANNA SUPPORTIVE**), net-negative = IV spikes force selling (**FRAGILE**)
+- **DEX (delta)** — dollar notional of dealer delta hedges; heavy concentrations act as price magnets into expiration
+
+Plus: highlighted spot row, **CW** (call wall) / **PW** (put wall) / **DM** (delta magnet) badges, GEX flip level, gamma support/resistance, per-expiry breakdown with OPEX tagging, and a thin-chain guard for illiquid names. Powered by a shared per-symbol options-chain cache (30-min TTL) in `chain_service.py`.
+
+### Options Contract Grader (A–F)
+
+Grades every 30–90 DTE contract for the active symbol against preset rules (`config.py` → `GRADER_*`), then surfaces the best candidate per risk tier:
+
+| Tier | Delta band | DTE preference |
+|------|-----------|----------------|
+| **Conservative** | 0.65–0.85 (ITM) | 60–90 |
+| **Balanced** | 0.45–0.60 (ATM) | 45–75 |
+| **Aggressive** | 0.25–0.40 (OTM) | 30–60 |
+
+- **Direction** comes from the Trend Confluence system (not a separate black box)
+- **Eligibility**: OI ≥ 100, spread ≤ 12% of mid, |delta| 0.15–0.90
+- **Quality score** = 40% liquidity + 25% value (IV vs 20-day HV) + 20% probability of profit + 15% risk efficiency (theta burn + breakeven distance vs ATR)
+- **Recommendation** = 65% quality + 35% tier fit; letters A ≥ 90 / B ≥ 75 / C ≥ 60 / D ≥ 45 / F
+- **Earnings guard**: picks are suppressed within 7 days of earnings (IV-crush protection); contracts whose expiry spans earnings are tagged **EARNINGS BEFORE EXPIRY**
+- Each pick shows delta, probability of profit, max risk, breakeven, IV, liquidity score, open interest, theta/day, and a "why this contract" explanation — plus an **Our Take** narrative that includes the dealer walls from the exposure ladder
 
 ## Project Structure
 
@@ -254,15 +282,21 @@ Net GEX by Strike chart with full strike price labels, dashed vertical gridlines
 ├── indicators.py          # 79 technical indicators including swing-specific features
 ├── confluence.py          # 12-indicator context-aware signal engine + exit scoring
 ├── confidence.py          # 6 leading indicators confidence overlay
-├── options_analyzer.py    # SPX/NDX options Greeks + analysis
-├── gex.py                 # Gamma exposure calculation + regime signal
+├── options_analyzer.py    # Options dashboard + contract analyzer (any ticker)
+├── options_grader.py      # A–F contract grader: tiers, scores, earnings guard
+├── chain_service.py       # Shared per-symbol options-chain fetch + 30-min cache
+├── earnings.py            # Earnings-date lookup (grader + ML guards)
+├── gex.py                 # GEX/VEX/DEX exposure + walls + regime signal
 ├── net_premium.py         # Net premium tracking + Day-1 flip detection + manual UW override
 ├── patterns.py            # Chart pattern detection + grading
 ├── universe.py            # Ticker lists (S&P 500, popular, ETFs)
-├── portfolio.py           # Position tracking + P&L
+├── portfolio.py           # Risk-based position sizing calculator
 ├── scaled_checklist.py    # 5-point entry scoring: STARTER / ADD / FULL / NO TRADE
 ├── trade_card.py          # Pre-trade plan enforcer + trade log storage
 ├── bot.py                 # CLI interface for signals
+├── test_confluence.py     # 58 confluence engine tests
+├── test_grader.py         # 27 grader unit tests (synthetic contracts)
+├── test_regression.py     # 12 golden-master API regression checks
 ├── start_dashboard.command # Double-click to launch server + open browser (macOS)
 ├── templates/
 │   └── index.html         # Dashboard UI (single-page app)
@@ -274,25 +308,22 @@ Net GEX by Strike chart with full strike price labels, dashed vertical gridlines
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/confluence` | GET | 12-indicator confluence signal with trend_context, GEX, net premium, fast pullback |
-| `/api/confidence` | GET | 6 leading indicators confidence grade |
-| `/api/predict` | GET | Dual ML signal: daily + 5-day trend |
-| `/api/backtest` | GET | Last 30 days prediction vs. actual |
-| `/api/train` | GET | Retrain both models with latest data |
-| `/api/options` | GET | Full SPX/NDX options analysis |
+| `/api/confluence` | GET | 12-indicator confluence signal with trend_context, GEX, net premium, fast pullback (`?symbol=` for any ticker) |
+| `/api/confidence` | GET | 6 leading indicators confidence grade (`?symbol=`) |
+| `/api/predict` | GET | Dual ML signal: daily + 5-day trend (`?symbol=` — trains on demand) |
+| `/api/backtest` | GET | Last 30 days prediction vs. actual (`?symbol=`) |
+| `/api/train` | GET | Retrain both models with latest data (`?symbol=`) |
+| `/api/options` | GET | 0–30 DTE options dashboard (`?symbol=` for any ticker) |
+| `/api/options/grade` | GET | A–F contract grader: three tier picks + Our Take (`?symbol=`) |
 | `/api/options/contract` | GET | Single contract Greeks + P&L |
-| `/api/gex` | GET | Gamma exposure by strike + regime signal |
+| `/api/gex` | GET | GEX/VEX/DEX exposure ladder + walls + regime (`?symbol=`) |
 | `/api/scan` | GET | Batch confluence scan |
 | `/api/patterns` | GET | Chart pattern scan |
 | `/api/net-premium` | GET | Net premium table + Day-1 flip signal |
 | `/api/net-premium/update` | POST | Manual premium data entry (Unusual Whales) |
-| `/api/portfolio` | GET | Portfolio status + positions |
-| `/api/portfolio/add` | POST | Add position |
-| `/api/portfolio/remove` | POST | Close position |
-| `/api/portfolio/account` | POST | Update account size |
 | `/api/risk-calc` | GET | Position sizing calculator |
-| `/api/live` | GET | Current SPX price + day stats |
-| `/api/exit` | GET | Exit analysis for open position |
+| `/api/live` | GET | Current price + day stats (`?symbol=`) |
+| `/api/exit` | GET | Exit analysis for an open position (`?symbol=`) |
 | `/api/checklist` | GET | Scaled entry checklist score + tier |
 | `/api/trade-card` | POST | Save a trade card to trade_log.json |
 | `/api/trade-log` | GET | Last N trade cards (`?n=20`) |
@@ -335,7 +366,13 @@ All market data comes from **Yahoo Finance** via the `yfinance` library (free, n
 - **GEX Regime vs. Dealer Positioning**: GEX Regime (indicator 11) measures long/short gamma regime from the GEX chart. Dealer Positioning (leading indicator 3) uses put/call ratios and IV rank. They are complementary, not duplicate.
 - **5-Day Trend accuracy**: Test set accuracy varies with market regime. The hybrid approach (ML + rules) is more stable across different conditions than pure ML alone.
 - **macOS file permissions**: `data_fetcher.py` and `model.py` delete existing cache/model files before rewriting them. macOS `com.apple.provenance` cannot be stripped — deleting and recreating avoids in-place overwrite failures on the Refresh & Retrain path.
+- **Single-stock ML models** are noisier than index models (idiosyncratic risk, earnings gaps) — treat probabilities as one input, never a sole basis. Signals within 5 days of earnings are flagged unreliable.
+- **Options data freshness**: quotes are delayed ~15–20 min and go stale off-hours (mids labeled "estimated"); open interest updates once daily. Per-symbol models/caches idle 30+ days are cleaned automatically at startup.
 - **Account balance**: Never stored in source code. Enter your own balance in the Scaled Entry Checklist — it saves to `localStorage` only.
+
+## Version History
+
+The **Any-Ticker Update** (v1.0.0 → v2.0.x) was shipped as incremental, individually verified releases — see [Releases](https://github.com/bemoneytalks/Swing-Trading-Bot/releases) and `CHANGELOG.md` for full notes per version.
 
 ## Disclaimer
 
