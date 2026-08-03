@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.0.3 — Leading Indicator Source Labels (2026-08-02)
+
+### Changed
+- All six Leading Indicators cards now declare their data source in the
+  title: News Sentiment, Dealer Positioning, Multi-Timeframe, and GEX
+  Regime show the analyzed ticker (e.g. "(MU)"); Crude Oil Correlation is
+  labeled "(macro)"; **Net Premium Flow is labeled "(SPX market flow)"** —
+  making explicit that it is index-level flow until per-ticker streak
+  history exists.
+
 ## v2.0.2 — Dynamic Confluence Tab + Tab Reorder (2026-08-02)
 
 ### Changed

@@ -2975,7 +2975,7 @@ function buildConfidenceDetails(details) {
     const crudeSignalColor = crude.signal === 1 ? '#3fb950' : (crude.signal === -1 ? '#ff7b72' : '#7d8590');
     const crudeSignalLabel = crude.signal === 1 ? 'BULLISH' : (crude.signal === -1 ? 'BEARISH' : 'NEUTRAL');
     html += '<div class="confidence-detail-card">';
-    html += '<div class="confidence-detail-title">2. Crude Oil Correlation <span style="color:' + crudeSignalColor + '; font-size:11px; margin-left:8px;">' + crudeSignalLabel + '</span></div>';
+    html += '<div class="confidence-detail-title">2. Crude Oil Correlation <span style="color:#7d8590; font-size:10px;">(macro)</span> <span style="color:' + crudeSignalColor + '; font-size:11px; margin-left:8px;">' + crudeSignalLabel + '</span></div>';
     if (crude.brent_price) {
         const brentColor = crude.brent_1d_change >= 0 ? '#3fb950' : '#ff7b72';
         html += '<div class="confidence-detail-row"><span>Brent Crude (BZ=F)</span><span class="value">$' + crude.brent_price + ' <span style="color:' + brentColor + '">(' + (crude.brent_1d_change >= 0 ? '+' : '') + crude.brent_1d_change + '%)</span></span></div>';
@@ -2993,7 +2993,7 @@ function buildConfidenceDetails(details) {
     const posSignalColor = pos.signal === 1 ? '#3fb950' : (pos.signal === -1 ? '#ff7b72' : '#7d8590');
     const posSignalLabel = pos.signal === 1 ? 'BULLISH' : (pos.signal === -1 ? 'BEARISH' : 'NEUTRAL');
     html += '<div class="confidence-detail-card">';
-    html += '<div class="confidence-detail-title">3. Dealer Positioning <span style="color:' + posSignalColor + '; font-size:11px; margin-left:8px;">' + posSignalLabel + '</span></div>';
+    html += '<div class="confidence-detail-title">3. Dealer Positioning' + (pos.symbol ? ' <span style="color:#7d8590; font-size:10px;">(' + pos.symbol + ')</span>' : '') + ' <span style="color:' + posSignalColor + '; font-size:11px; margin-left:8px;">' + posSignalLabel + '</span></div>';
     html += '<div class="confidence-detail-row"><span>Dealer Gamma</span><span class="value">' + (pos.dealer_position || 'N/A') + '</span></div>';
     if (pos.pc_volume_ratio) html += '<div class="confidence-detail-row"><span>Put/Call Volume</span><span class="value">' + pos.pc_volume_ratio.toFixed(2) + '</span></div>';
     if (pos.pc_oi_ratio) html += '<div class="confidence-detail-row"><span>Put/Call OI</span><span class="value">' + pos.pc_oi_ratio.toFixed(2) + '</span></div>';
@@ -3023,7 +3023,7 @@ function buildConfidenceDetails(details) {
     const npSignalColor = np.signal === 1 ? '#3fb950' : (np.signal === -1 ? '#ff7b72' : '#7d8590');
     const npSignalLabel = np.signal === 1 ? 'BULLISH' : (np.signal === -1 ? 'BEARISH' : 'NEUTRAL');
     html += '<div class="confidence-detail-card">';
-    html += '<div class="confidence-detail-title">5. Net Premium Flow <span style="color:' + npSignalColor + '; font-size:11px; margin-left:8px;">' + npSignalLabel + '</span>';
+    html += '<div class="confidence-detail-title">5. Net Premium Flow <span style="color:#d29922; font-size:10px;">(' + ((np.symbol || 'SPX') + ' market flow') + ')</span> <span style="color:' + npSignalColor + '; font-size:11px; margin-left:8px;">' + npSignalLabel + '</span>';
     if (np.latest_source === 'manual') html += ' <span style="background:#d29922; color:#0a0e17; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:700; margin-left:4px;">UW DATA</span>';
     html += '</div>';
     html += '<div class="confidence-detail-row"><span>Signal</span><span class="value">' + (np.label || 'N/A') + '</span></div>';
@@ -3045,7 +3045,7 @@ function buildConfidenceDetails(details) {
     const gexSignalColor = gex.signal === 1 ? '#3fb950' : (gex.signal === -1 ? '#ff7b72' : '#7d8590');
     const gexSignalLabel = gex.signal === 1 ? 'LONG GAMMA (BULLISH)' : (gex.signal === -1 ? 'SHORT GAMMA (BEARISH)' : 'NEUTRAL');
     html += '<div class="confidence-detail-card">';
-    html += '<div class="confidence-detail-title">6. GEX Regime <span style="color:' + gexSignalColor + '; font-size:11px; margin-left:8px;">' + gexSignalLabel + '</span>';
+    html += '<div class="confidence-detail-title">6. GEX Regime' + (gex.symbol ? ' <span style="color:#7d8590; font-size:10px;">(' + gex.symbol + ')</span>' : '') + ' <span style="color:' + gexSignalColor + '; font-size:11px; margin-left:8px;">' + gexSignalLabel + '</span>';
     if (gex.flip_event) {
         const flipDirGex = gex.flip_direction === 'LONG' ? 'gex-flip-long' : 'gex-flip-short';
         html += ' <span class="flip-badge ' + flipDirGex + '">⚡ GEX FLIP ' + (gex.flip_direction || '') + '</span>';

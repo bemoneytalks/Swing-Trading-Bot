@@ -599,6 +599,10 @@ def assess_confidence(confluence_result, index='SPX'):
         net_prem = fetch_net_premium_signal(index=index)
     except Exception:
         net_prem = {"signal": 0, "label": "Unavailable", "detail": "Could not load net premium data"}
+    # Net premium is index-level flow (per-ticker needs streak history);
+    # declare the source so the UI can label it honestly
+    if isinstance(net_prem, dict):
+        net_prem["symbol"] = index
 
     # Import GEX regime signal (per-ticker for custom symbols)
     try:
