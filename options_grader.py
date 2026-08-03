@@ -316,21 +316,35 @@ def grade_chain(symbol, allow_earnings=False):
             tiers[tier_name] = None
 
     # ── 6. GEX context + narrative ──
+    # For NDX the graded contracts are QQQ options, so wall levels must be
+    # quoted in QQQ scale to match the recommended strikes.
     gex_line = ""
     try:
         from gex import get_gex_signal
-        custom = symbol not in ("SPX", "NDX")
-        gs = get_gex_signal(index="NDX" if symbol == "NDX" else "SPX",
-                            symbol=symbol if custom else None)
+        if symbol == "NDX":
+            gs = get_gex_signal(index="SPX", symbol="QQQ")
+            gex_label = "QQQ"
+        elif symbol == "SPX":
+            gs = get_gex_signal(index="SPX")
+            gex_label = "SPX"
+        else:
+            gs = get_gex_signal(index="SPX", symbol=symbol)
+            gex_label = symbol
         if gs.get("regime") not in (None, "UNKNOWN"):
             walls = ""
             if gs.get("call_wall") and gs.get("put_wall"):
                 walls = (f" Dealer walls sit at {gs['put_wall']:g} (put) and "
                          f"{gs['call_wall']:g} (call).")
             gex_line = (f" Dealers are {gs['regime'].lower()} on "
-                        f"{symbol}.{walls}")
+                        f"{gex_label}.{walls}")
     except Exception:
         pass
+
+    proxy_note = None
+    if symbol == "NDX":
+        proxy_note = ("Direction is scored on the NDX index; recommended "
+                      "contracts are QQQ options (deeper liquidity than NDX "
+                      "options), so all prices and strikes are QQQ scale.")
 
     med_iv = f"{stats['median_iv'] * 100:.1f}%" if stats.get("median_iv") else "n/a"
     take = (
@@ -353,7 +367,9 @@ def grade_chain(symbol, allow_earnings=False):
                 f"to IV crush, so contract recommendations are suppressed. ") + take
 
     return {
-        "symbol": symbol,
+        "symbol": "QQQ" if symbol == "NDX" else symbol,
+        "direction_source": symbol,
+        "proxy_note": proxy_note,
         "spot": round(spot, 2),
         "direction": side,
         "directional": directional,
