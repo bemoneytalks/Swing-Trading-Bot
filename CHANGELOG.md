@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.0.4 — Honest NDX Grader Labeling (2026-08-03)
+
+### Fixed
+- Grading **NDX** showed QQQ's spot price ($694) under an "NDX" headline,
+  and quoted dealer walls in NDX scale (28,781) next to QQQ-scale strikes.
+  The grader has always deliberately recommended **QQQ contracts** for NDX
+  (deeper liquidity than NDX options); it now says so: the banner reads
+  **QQQ** with a proxy note ("Direction is scored on the NDX index;
+  recommended contracts are QQQ options…"), and wall levels are quoted in
+  QQQ scale to match the recommended strikes. SPX and custom tickers
+  unchanged.
+
 ## v2.0.3 — Leading Indicator Source Labels (2026-08-02)
 
 ### Changed
