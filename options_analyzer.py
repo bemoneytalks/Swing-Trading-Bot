@@ -1046,3 +1046,232 @@ def suggest_contracts(strike, expiration, option_type, premium, contracts=1,
         },
         "timestamp": datetime.now().strftime("%H:%M:%S"),
     }
+
+
+# ─── Options Opportunity Scanner (cross-ticker) ───────────────────────────────
+
+def _swing_pop(spot, k, T, r, sigma, premium, opt_type, swing_days=14):
+    """Probability the contract is at/above break-even at a ~2-week swing exit.
+
+    Finds the underlying level where the option is worth its premium again after
+    `swing_days` of time decay, then the driftless probability of reaching that
+    level within the window. This reflects an EARLY swing exit rather than holding
+    to expiration — the right lens for a 30-60 DTE contract on a days-to-weeks signal.
+    """
+    if T <= 0 or sigma <= 0 or premium <= 0:
+        return 0.0
+    remaining_T = max((T * 365 - swing_days) / 365, 1 / 365)
+    lo, hi = spot * 0.5, spot * 1.5
+    for _ in range(60):
+        m = (lo + hi) / 2
+        val = _black_scholes_price(m, k, remaining_T, r, sigma, opt_type)
+        if opt_type == "call":
+            if val < premium:
+                lo = m
+            else:
+                hi = m
+        else:
+            if val < premium:
+                hi = m
+            else:
+                lo = m
+    s_star = (lo + hi) / 2
+    T_swing = swing_days / 365
+    d = (np.log(spot / s_star) - 0.5 * sigma ** 2 * T_swing) / (sigma * np.sqrt(T_swing))
+    p_above = float(norm.cdf(d))
+    return p_above if opt_type == "call" else (1.0 - p_above)
+
+
+def _best_swing_contract(symbol, direction, dte_min, dte_max):
+    """Pick and score the ~ATM contract in the DTE window for a directional swing.
+
+    direction: 'long' -> call, 'short' -> put. Returns a scored dict or None.
+    """
+    opt_type = "call" if direction == "long" else "put"
+    r = 0.045
+    tk = yf.Ticker(symbol)
+    try:
+        hist = tk.history(period="1mo")
+        if hist.empty:
+            return None
+        spot = float(hist["Close"].iloc[-1])
+    except Exception:
+        return None
+    try:
+        exps = list(tk.options)
+    except Exception:
+        return None
+    if not exps:
+        return None
+
+    today = datetime.now().date()
+    target_dte = (dte_min + dte_max) / 2
+    cand = []
+    for e in exps:
+        try:
+            d = (datetime.strptime(e, "%Y-%m-%d").date() - today).days
+        except Exception:
+            continue
+        if dte_min <= d <= dte_max:
+            cand.append((e, d))
+    if not cand:
+        return None
+    exp, dte = min(cand, key=lambda x: abs(x[1] - target_dte))
+    T = max(dte / 365, 1 / 365)
+
+    try:
+        chain = tk.option_chain(exp)
+    except Exception:
+        return None
+    table = chain.calls if opt_type == "call" else chain.puts
+    if table is None or len(table) == 0:
+        return None
+
+    # Nearest-to-ATM strike (delta ~0.5) — standard directional swing choice
+    table = table.copy()
+    table["_dist"] = (table["strike"].astype(float) - spot).abs()
+    row = table.sort_values("_dist").iloc[0]
+
+    k = float(row["strike"])
+    bid = float(row.get("bid", 0) or 0)
+    ask = float(row.get("ask", 0) or 0)
+    last = float(row.get("lastPrice", 0) or 0)
+    mid = (bid + ask) / 2 if (bid > 0 and ask > 0) else last
+    if mid < 0.10:
+        return None
+    intrinsic = max(spot - k, 0.0) if opt_type == "call" else max(k - spot, 0.0)
+    if mid < intrinsic * 0.98:
+        return None
+    iv = float(row.get("impliedVolatility", 0) or 0)
+    if iv < 0.01:
+        iv = _implied_vol_from_premium(spot, k, T, r, mid, opt_type)
+    if iv <= 0:
+        return None
+    sigma = max(iv, 0.02)
+
+    vol_raw = row.get("volume", 0)
+    oi_raw = row.get("openInterest", 0)
+    vol = 0 if (vol_raw is None or (isinstance(vol_raw, float) and np.isnan(vol_raw))) else int(vol_raw)
+    oi = 0 if (oi_raw is None or (isinstance(oi_raw, float) and np.isnan(oi_raw))) else int(oi_raw)
+    if vol == 0 and oi == 0:
+        return None
+
+    greeks = _calculate_greeks(spot, k, T, r, sigma, opt_type)
+    swing_pop = _swing_pop(spot, k, T, r, sigma, mid, opt_type)
+    sc = _ev_score(spot, k, T, r, sigma, mid, opt_type)
+    if sc is None:
+        return None
+    pop_exp, rr, ev, be_exp = sc
+
+    return {
+        "spot": round(spot, 2),
+        "strike": k,
+        "expiration": exp,
+        "dte": dte,
+        "option_type": opt_type,
+        "premium": round(mid, 2),
+        "delta": round(greeks["delta"], 3),
+        "swing_pop": round(swing_pop * 100, 1),
+        "pop_expiry": round(pop_exp * 100, 1),
+        "reward_risk": round(rr, 2),
+        "ev": round(ev, 3),
+        "breakeven": round(be_exp, 2),
+        "breakeven_move": round((be_exp - spot) / spot * 100, 2),
+        "iv": round(sigma * 100, 1),
+        "volume": vol,
+        "open_interest": oi,
+    }
+
+
+def _opp_grade(signal_strength, swing_pop, ev):
+    """Blend signal conviction, swing probability, and EV into a letter grade."""
+    score = 0.4 * signal_strength + 0.4 * swing_pop + 20 * max(min(ev, 1.0), 0.0)
+    if score >= 78:
+        return "A+"
+    if score >= 70:
+        return "A"
+    if score >= 62:
+        return "A-"
+    if score >= 54:
+        return "B+"
+    if score >= 46:
+        return "B"
+    return "B-"
+
+
+def find_opportunities(symbols=None, mode="default", dte_min=30, dte_max=60,
+                       min_swing_pop=40.0, max_results=25):
+    """Scan a universe of tickers for the best directional option trades.
+
+    For each ticker the bot rates with a strong directional signal, picks the
+    near-ATM contract in the DTE window on the signal's side (call for bullish,
+    put for bearish), scores it for a ~2-week swing exit, then grades/tiers and
+    ranks by expected value. Reuses the confluence engine for direction.
+    """
+    from confluence import analyze_ticker, DEFAULT_WATCHLIST
+    if symbols is None:
+        try:
+            from universe import get_universe
+            symbols = get_universe(mode)
+        except Exception:
+            symbols = DEFAULT_WATCHLIST
+
+    opportunities = []
+    scanned = 0
+    signaled = 0
+
+    for sym in symbols:
+        scanned += 1
+        try:
+            res = analyze_ticker(sym)
+        except Exception:
+            continue
+        if not res:
+            continue
+        signal = res.get("signal", "NO SIGNAL")
+        # Only strong directional signals (ENTER / STAY) — skip LEAN and NO SIGNAL
+        if signal.startswith("LEAN") or signal == "NO SIGNAL":
+            continue
+        if "LONG" in signal:
+            direction = "long"
+        elif "SHORT" in signal:
+            direction = "short"
+        else:
+            continue
+        signaled += 1
+
+        contract = _best_swing_contract(sym, direction, dte_min, dte_max)
+        if contract is None:
+            continue
+        if contract["swing_pop"] < min_swing_pop:
+            continue
+
+        total = res.get("total_indicators", 12) or 12
+        strength = res.get("strength", 0)
+        sig_score = round(strength / total * 100)
+
+        opp = {
+            "symbol": sym,
+            "direction": direction,
+            "signal": signal,
+            "signal_strength": sig_score,
+        }
+        opp.update(contract)
+        opp["grade"] = _opp_grade(sig_score, contract["swing_pop"], contract["ev"])
+        opp["tier"] = "Preferred" if (sig_score >= 60 and contract["ev"] > 0) else "Eligible"
+        opportunities.append(opp)
+
+    opportunities.sort(key=lambda o: (o["ev"], o["swing_pop"]), reverse=True)
+    top = opportunities[:max_results]
+
+    return {
+        "opportunities": top,
+        "count": len(top),
+        "qualified": len(opportunities),
+        "signaled": signaled,
+        "total_scanned": scanned,
+        "dte_min": dte_min,
+        "dte_max": dte_max,
+        "min_swing_pop": min_swing_pop,
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+    }

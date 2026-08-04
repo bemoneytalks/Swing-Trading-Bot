@@ -1610,24 +1610,71 @@
             </div>
 
     <div id="scanner-tab" class="tab-content">
-        <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
-            <div class="exit-form-title">Custom Watchlist</div>
-            <div style="font-size:11px; color:#7d8590; margin-bottom:10px;">Add tickers separated by commas. Leave blank to scan the default 38 tickers.</div>
-            <div class="exit-form-row">
-                <div class="exit-form-group" style="flex:1;">
-                    <label>Tickers</label>
-                    <input type="text" id="custom-tickers" placeholder="e.g. AAPL, TSLA, NVDA, COIN, PLTR" style="width:100%;">
+        <div class="tabs" style="margin-bottom:0; border-bottom:1px solid #21262d;">
+            <button class="tab active" id="scan-sub-stocks" onclick="showScanSub('stocks')">Stocks</button>
+            <button class="tab" id="scan-sub-options" onclick="showScanSub('options')">Options</button>
+        </div>
+
+        <div id="scan-stocks-sub" class="scan-sub-content" style="display:block; padding-top:24px;">
+            <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
+                <div class="exit-form-title">Custom Watchlist</div>
+                <div style="font-size:11px; color:#7d8590; margin-bottom:10px;">Add tickers separated by commas. Leave blank to scan the default 38 tickers.</div>
+                <div class="exit-form-row">
+                    <div class="exit-form-group" style="flex:1;">
+                        <label>Tickers</label>
+                        <input type="text" id="custom-tickers" placeholder="e.g. AAPL, TSLA, NVDA, COIN, PLTR" style="width:100%;">
+                    </div>
+                    <button class="btn primary" onclick="loadScan()" style="height:37px;">Scan</button>
+                    <button class="btn" onclick="document.getElementById('custom-tickers').value=''; loadScan();" style="height:37px;">Default List</button>
                 </div>
-                <button class="btn primary" onclick="loadScan()" style="height:37px;">Scan</button>
-                <button class="btn" onclick="document.getElementById('custom-tickers').value=''; loadScan();" style="height:37px;">Default List</button>
             </div>
+            <div id="scanner-loading" class="loading">
+                <div class="spinner"></div>
+                <div>Click "Scan Tickers" to find trade setups</div>
+            </div>
+            <div id="scanner-content" style="display:none;"></div>
+            <div id="scanner-error" style="display:none;"></div>
         </div>
-        <div id="scanner-loading" class="loading">
-            <div class="spinner"></div>
-            <div>Click "Scan Tickers" to find trade setups</div>
+
+        <div id="scan-options-sub" class="scan-sub-content" style="display:none; padding-top:24px;">
+            <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
+                <div class="exit-form-title">Option Opportunities — scan the watchlist for the best directional swing trades</div>
+                <div style="font-size:11px; color:#7d8590; margin-bottom:12px;">Call/put direction is set per ticker by the bot's confluence signal. Only strongly-signaled names appear.</div>
+                <div class="exit-form-row" style="align-items:flex-end; flex-wrap:wrap; gap:16px;">
+                    <div class="exit-form-group">
+                        <label>Universe</label>
+                        <select id="opp-universe">
+                            <option value="default">Watchlist (38)</option>
+                            <option value="popular">Popular + ETFs</option>
+                            <option value="sp500">S&amp;P 500 (slow)</option>
+                        </select>
+                    </div>
+                    <div class="exit-form-group">
+                        <label>DTE</label>
+                        <select id="opp-dte">
+                            <option value="30-60">30–60</option>
+                            <option value="30-90">30–90</option>
+                            <option value="7-30">7–30</option>
+                        </select>
+                    </div>
+                    <div class="exit-form-group" style="flex:1; min-width:200px;">
+                        <label>Min swing POP: <span id="opp-popval">40%</span></label>
+                        <input type="range" id="opp-popfloor" min="0" max="70" step="5" value="40" style="width:100%;"
+                            oninput="document.getElementById('opp-popval').textContent=this.value+'%'">
+                    </div>
+                    <button class="btn primary" onclick="loadOpportunities()" style="height:37px;">Find Opportunities</button>
+                </div>
+            </div>
+            <div id="opp-loading" class="loading" style="display:none;">
+                <div class="spinner"></div>
+                <div>Scanning the watchlist for signals, then pricing chains on the strong names... this can take up to a minute.</div>
+            </div>
+            <div id="opp-hint" class="loading">
+                <div>Click "Find Opportunities" to scan for the best option trades.</div>
+            </div>
+            <div id="opp-content" style="display:none;"></div>
+            <div id="opp-error" style="display:none;"></div>
         </div>
-        <div id="scanner-content" style="display:none;"></div>
-        <div id="scanner-error" style="display:none;"></div>
     </div>
 
     <div id="patterns-tab" class="tab-content">
@@ -3601,6 +3648,103 @@ function toggleScanDetail(idx) {
         panel.classList.add('active');
         scanDetailOpen = idx;
     }
+}
+
+function showScanSub(which) {
+    document.getElementById('scan-stocks-sub').style.display = which === 'stocks' ? 'block' : 'none';
+    document.getElementById('scan-options-sub').style.display = which === 'options' ? 'block' : 'none';
+    document.getElementById('scan-sub-stocks').classList.toggle('active', which === 'stocks');
+    document.getElementById('scan-sub-options').classList.toggle('active', which === 'options');
+}
+
+async function loadOpportunities() {
+    const universe = document.getElementById('opp-universe').value;
+    const dte = document.getElementById('opp-dte').value.split('-');
+    const minPop = document.getElementById('opp-popfloor').value;
+
+    document.getElementById('opp-hint').style.display = 'none';
+    document.getElementById('opp-loading').style.display = 'block';
+    document.getElementById('opp-content').style.display = 'none';
+    document.getElementById('opp-error').style.display = 'none';
+    setStatus('Scanning for option opportunities...');
+
+    try {
+        const url = '/api/opportunities?universe=' + universe + '&dte_min=' + dte[0]
+            + '&dte_max=' + dte[1] + '&min_swing_pop=' + minPop;
+        const res = await fetch(url);
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error);
+        renderOpportunities(d);
+        document.getElementById('opp-loading').style.display = 'none';
+        document.getElementById('opp-content').style.display = 'block';
+        setStatus(d.count + ' opportunities found (' + d.total_scanned + ' tickers scanned)');
+    } catch (err) {
+        document.getElementById('opp-loading').style.display = 'none';
+        document.getElementById('opp-error').style.display = 'block';
+        document.getElementById('opp-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
+        setStatus('Error scanning opportunities');
+    }
+}
+
+function renderOpportunities(d) {
+    const host = document.getElementById('opp-content');
+    const fmt$ = n => '$' + Math.round(n).toLocaleString();
+    const expShort = o => {
+        const dt = new Date(o.expiration + 'T00:00:00');
+        return dt.toLocaleString('en-US', {month:'short', day:'numeric'}) + ' · ' + o.dte + 'd';
+    };
+
+    if (!d.opportunities || d.opportunities.length === 0) {
+        host.innerHTML = '<div class="card" style="text-align:center; color:#7d8590; padding:24px;">'
+            + 'No opportunities cleared your filters. ' + d.signaled + ' of ' + d.total_scanned
+            + ' tickers had a strong directional signal — lower Min swing POP or widen the DTE range.</div>';
+        return;
+    }
+
+    let rows = '';
+    d.opportunities.forEach(function(o, i) {
+        const isCall = o.option_type === 'call';
+        const dirC = isCall ? '#3fb950' : '#ff7b72';
+        const pref = o.tier === 'Preferred';
+        const bg = pref ? 'background:#0d2c1c;' : '';
+        const sigWord = isCall ? 'Bull' : 'Bear';
+        const tierBadge = pref
+            ? '<span style="font-size:10px; background:#3fb950; color:#04140b; padding:2px 8px; border-radius:4px;">Preferred</span>'
+            : '<span style="font-size:10px; color:#3fb950; border:1px solid #2ea043; padding:2px 8px; border-radius:4px;">Eligible</span>';
+        rows += '<tr style="' + bg + ' text-align:right; border-bottom:1px solid #1c1e23;">'
+            + '<td style="text-align:left; padding:9px 8px; color:#7d8590;">' + (i+1) + '</td>'
+            + '<td style="text-align:left; padding:9px 8px; font-weight:600; color:#e6edf3;">' + o.symbol + '</td>'
+            + '<td style="text-align:left; padding:9px 8px; color:' + dirC + '; font-weight:600;">' + (isCall ? 'Call' : 'Put') + '</td>'
+            + '<td style="text-align:left; padding:9px 8px; color:#c9d1d9;">$' + o.strike + (isCall?'C':'P')
+                + '<div style="font-size:11px; color:#7d8590;">' + expShort(o) + '</div></td>'
+            + '<td style="padding:9px 8px; color:#7d8590;">$' + o.premium.toFixed(2) + '</td>'
+            + '<td style="padding:9px 8px; color:#7d8590;">' + o.delta.toFixed(2) + '</td>'
+            + '<td style="padding:9px 8px; font-weight:600; color:#c9d1d9;">' + o.swing_pop + '%</td>'
+            + '<td style="padding:9px 8px; font-weight:600; color:' + (o.ev>=0?'#3fb950':'#ff7b72') + ';">' + (o.ev>=0?'+':'') + o.ev.toFixed(2) + '</td>'
+            + '<td style="padding:9px 8px; color:#7d8590; font-size:11px;">' + o.breakeven_move + '%</td>'
+            + '<td style="text-align:left; padding:9px 8px; color:' + dirC + ';">' + sigWord + ' ' + o.signal_strength + '</td>'
+            + '<td style="padding:9px 8px; font-weight:600; color:#c9d1d9;">' + o.grade + '</td>'
+            + '<td style="padding:9px 8px;">' + tierBadge + '</td>'
+            + '</tr>';
+    });
+
+    host.innerHTML =
+        '<div style="font-size:11px; color:#484f58; margin-bottom:12px; text-align:right;">'
+          + d.count + ' opportunities · ' + d.signaled + ' signaled of ' + d.total_scanned + ' scanned · '
+          + d.dte_min + '–' + d.dte_max + ' DTE · ' + d.timestamp + '</div>'
+        + '<div class="card"><div style="overflow-x:auto;">'
+          + '<table style="width:100%; border-collapse:collapse; font-size:13px; min-width:760px;">'
+          + '<thead><tr style="color:#7d8590; font-size:10px; text-transform:uppercase; text-align:right; border-bottom:2px solid #21262d;">'
+          + '<th style="text-align:left; padding:8px;">#</th><th style="text-align:left; padding:8px;">Ticker</th>'
+          + '<th style="text-align:left; padding:8px;">Type</th><th style="text-align:left; padding:8px;">Contract</th>'
+          + '<th style="padding:8px;">Prem</th><th style="padding:8px;">Δ</th><th style="padding:8px;">Swing POP</th>'
+          + '<th style="padding:8px;">EV/$1</th><th style="padding:8px;">BE move</th>'
+          + '<th style="text-align:left; padding:8px;">Signal</th><th style="padding:8px;">Grade</th><th style="padding:8px;">Tier</th></tr></thead>'
+          + '<tbody>' + rows + '</tbody></table></div></div>'
+        + '<div style="font-size:11px; color:#7d8590; margin-top:12px; line-height:1.6;">'
+          + 'Swing POP = model probability the contract is profitable at a ~2-week swing exit (not held to expiration). '
+          + 'Direction set per ticker by the bot\'s confluence signal. EV/$1 = expected value per dollar risked. '
+          + 'Near-ATM contracts, liquidity-filtered. Model estimates — research only, not financial advice.</div>';
 }
 
 async function loadScan() {

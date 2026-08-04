@@ -29,7 +29,7 @@ from data_fetcher import fetch_spx_data, fetch_index_data
 from indicators import add_all_features, get_feature_columns
 from gex import fetch_gex_data
 from confluence import analyze_ticker, analyze_ticker_with_confidence, analyze_exit, scan_watchlist, DEFAULT_WATCHLIST
-from options_analyzer import analyze_spx_options, analyze_contract, suggest_contracts
+from options_analyzer import analyze_spx_options, analyze_contract, suggest_contracts, find_opportunities
 from portfolio import calculate_position_size
 from net_premium import (auto_update_today, get_premium_table, update_manual_premium,
                          fetch_net_premium_signal)
@@ -831,6 +831,22 @@ def api_options_contract():
         result = analyze_contract(strike, expiration, option_type, premium, contracts, target_exit, current_price, current_spx, underlying)
         if result is None:
             return jsonify({"success": False, "error": "Could not fetch options data for " + underlying})
+        result["success"] = True
+        return jsonify(_sanitize(result))
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+@app.route("/api/opportunities")
+def api_opportunities():
+    try:
+        mode = request.args.get("universe", "default")
+        dte_min = int(request.args.get("dte_min", 30))
+        dte_max = int(request.args.get("dte_max", 60))
+        min_swing_pop = float(request.args.get("min_swing_pop", 40))
+        max_results = int(request.args.get("max_results", 25))
+        result = find_opportunities(mode=mode, dte_min=dte_min, dte_max=dte_max,
+                                    min_swing_pop=min_swing_pop, max_results=max_results)
         result["success"] = True
         return jsonify(_sanitize(result))
     except Exception as e:
