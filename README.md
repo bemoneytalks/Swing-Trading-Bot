@@ -17,11 +17,11 @@ Type any ticker into the input on the tab bar and hit **Analyze** — the first 
 |-----|-------------|
 | **SPX / _any ticker_** | Dual-panel system for the active symbol: **Trend System** (12-indicator context-aware engine — fires ENTER LONG/SHORT at 8+/12, STAY at 6–7, LEAN at 5) and **Reversal Entry** (6 contrarian indicators that catch bottoms/tops the trend system misses). Includes GEX Flip ⚡ and Flow Flip ⚡ event badges, Fast Pullback/Breakout Alert, trend context label (UPTREND/DOWNTREND/RANGE), and 6 leading confidence indicators (news sentiment, multi-timeframe Heikin-Ashi, GEX regime, and dealer positioning all follow the ticker). |
 | **NDX** | Same 12-indicator confluence engine for Nasdaq-100. Sub-tabs: Confluence, QQQ Options (with Contract Analyzer), ML Signal, GEX (QQQ-scaled exposure ladder), Backtest. |
-| **Options** | The contract workflow for the active symbol: **A–F Options Contract Grader** (three risk tiers with Recommendation/Quality/Tier-fit scores and an earnings guard), **Contract Analyzer** (probability of profit, P&L scenarios, target-exit odds on a specific trade), and the **0–30 DTE Options Dashboard** (IV rank, put/call skew, suggested strikes, pivots, ATM Greeks, strategy suggestions) — all following the graded ticker. Includes the Trade Card Enforcer. |
+| **Options** | The contract workflow for the active symbol: **A–F Options Contract Grader** (three risk tiers with Recommendation/Quality/Tier-fit scores and an earnings guard), **Contract Analyzer** (probability of profit, P&L scenarios, target-exit odds on a specific trade — plus **better-value suggestions** that scan the chain for contracts with higher risk-adjusted expected value than the one you entered), and the **0–30 DTE Options Dashboard** (IV rank, put/call skew, suggested strikes, pivots, ATM Greeks, strategy suggestions) — all following the graded ticker. Includes the Trade Card Enforcer. |
 | **ML Signal** | **Dual ML system for any ticker**: next-day candle direction + 5-day swing trend (hybrid ML + 8-factor rules score), shown side-by-side with an alignment indicator. First use of a new ticker trains its dedicated model (~1–3 min, then cached). Single-stock signals show the next earnings date and are flagged near earnings. |
 | **GEX** | **GEX / VEX / DEX dealer exposure ladder** by strike for any ticker — synced gamma, vanna, and delta exposure columns with a highlighted spot row, call wall / put wall / delta magnet badges, vanna bias, flip level, per-expiry breakdown, and dealer positioning. |
 | **Risk Calc** | Pre-trade station: **Scaled Entry Checklist** (5-point tiered position sizing) + **Position Size Calculator** (risk-based share sizing off account %, entry, and stop). |
-| **Scanner** | Batch confluence scan across 38–570 tickers. Filter by signal type (ENTER LONG, ENTER SHORT, STAY LONG, STAY SHORT, LEAN). |
+| **Scanner** | Two sub-tabs. **Stocks** — batch confluence scan across 38–570 tickers, filterable by signal type (ENTER LONG, ENTER SHORT, STAY LONG, STAY SHORT, LEAN). **Options** — cross-ticker option-opportunity finder: for each ticker the bot rates with a strong directional signal, it picks the near-ATM contract in a 30–60 DTE window on the signal's side (call for bullish, put for bearish), scores it for a ~2-week swing exit, and ranks by expected value with A+–B grades and Preferred/Eligible tiers. |
 | **Patterns** | AskLivermore-style chart pattern detection across 15 patterns (5 per phase) with A+ to B quality grading, entry zone, stop, target, and R:R. Scans 38–570 tickers. |
 | **Backtest** | Last 30 days of ML predictions vs. actual outcomes for the active symbol's model, with overall and high-confidence accuracy. |
 
@@ -271,6 +271,25 @@ Grades every 30–90 DTE contract for the active symbol against preset rules (`c
 - **Earnings guard**: picks are suppressed within 7 days of earnings (IV-crush protection); contracts whose expiry spans earnings are tagged **EARNINGS BEFORE EXPIRY**
 - Each pick shows delta, probability of profit, max risk, breakeven, IV, liquidity score, open interest, theta/day, and a "why this contract" explanation — plus an **Our Take** narrative that includes the dealer walls from the exposure ladder
 
+### Contract Analyzer — Better-Value Suggestions
+
+After you analyze a specific contract, the app scans the chain for alternatives with a **higher risk-adjusted expected value** than the one you entered:
+
+- **Scans** strikes within ±3% of spot, across your expiration plus the nearest others, keeping your call/put.
+- **Ranks by EV per $1 risked** = `POP × reward:risk − (1 − POP)`, where reward is valued at a one-expected-move target. Ranking on EV (not raw probability) avoids the deep-ITM trap where the "safest" contracts have the worst payoff.
+- **Adjustable Min-POP slider** filters client-side; a note tells you when a higher-EV contract is hidden below your floor, so the filter never silently costs you the best option.
+- Robustness: rejects quotes below intrinsic value, floors σ to dodge the Black-Scholes degeneracy at σ→0 (feeds report ~1e-5 IV near expiry), and skips illiquid strikes.
+
+### Option Opportunity Scanner (Scanner → Options)
+
+A cross-ticker finder that surfaces the best directional swing-option trades across a universe:
+
+- **Direction comes from the bot's own signal** — for each ticker rated ENTER/STAY, it picks a call (bullish) or put (bearish). No-signal and LEAN names are skipped, so it's quality over quantity.
+- **Near-ATM contract** (delta ≈ 0.50) in a **30–60 DTE** window (also 30–90 / 7–30), the standard directional-swing choice.
+- **Swing POP, not expiration POP** — scores the probability the contract is profitable at a **~2-week early exit** (theta-adjusted break-even reached within the window), the right lens for how a 30–60 DTE swing is actually held. Runs lower than expiration POP by nature; the Min-swing-POP floor defaults to 40%.
+- **Ranked by EV**, graded A+–B, and bucketed into **Preferred** (strong signal + positive EV) vs **Eligible** tiers.
+- Only fetches option chains for signaled tickers; the 38-ticker watchlist scans in ~10–15s. The full S&P 500 is much slower and may hit rate limits.
+
 ## Project Structure
 
 ```
@@ -316,8 +335,10 @@ Grades every 30–90 DTE contract for the active symbol against preset rules (`c
 | `/api/options` | GET | 0–30 DTE options dashboard (`?symbol=` for any ticker) |
 | `/api/options/grade` | GET | A–F contract grader: three tier picks + Our Take (`?symbol=`) |
 | `/api/options/contract` | GET | Single contract Greeks + P&L |
+| `/api/options/suggest` | GET | Better-value contracts vs. an entered one, ranked by EV (`?min_pop=`) |
 | `/api/gex` | GET | GEX/VEX/DEX exposure ladder + walls + regime (`?symbol=`) |
-| `/api/scan` | GET | Batch confluence scan |
+| `/api/scan` | GET | Batch confluence scan (Scanner → Stocks) |
+| `/api/opportunities` | GET | Cross-ticker option-opportunity scan (`?universe=&dte_min=&dte_max=&min_swing_pop=`) |
 | `/api/patterns` | GET | Chart pattern scan |
 | `/api/net-premium` | GET | Net premium table + Day-1 flip signal |
 | `/api/net-premium/update` | POST | Manual premium data entry (Unusual Whales) |
