@@ -814,3 +814,235 @@ def analyze_contract(strike, expiration, option_type, premium, contracts=1, targ
         "theta_decay": decay,
         "timestamp": datetime.now().strftime("%H:%M:%S"),
     }
+
+
+def _ev_score(spot, strike, T, r, sigma, premium, option_type):
+    """Probability of profit, reward:risk, and expected value per $1 risked.
+
+    EV/$1 = POP * (reward/risk) - (1 - POP), where reward is the option's value
+    if the underlying travels one expected move (spot * sigma * sqrt(T)) toward
+    profit, valued with the time remaining, and risk is the premium paid. This is
+    an APPROXIMATION used only to rank candidate contracts consistently against
+    each other — not a calibrated forecast. Returns
+    (pop, reward_risk, ev, breakeven_expiry) or None.
+    """
+    if premium <= 0 or T <= 0 or sigma <= 0:
+        return None
+
+    # Floor sigma to avoid the Black-Scholes degeneracy at sigma->0, where the
+    # risk-free drift term dominates and forces POP to a false 0% or 100%.
+    # Index options realistically never price below ~2% IV; this only bites the
+    # garbage near-expiry values some feeds report (e.g. 1e-5).
+    sigma = max(sigma, 0.02)
+
+    if option_type == "call":
+        breakeven_expiry = strike + premium
+    else:
+        breakeven_expiry = strike - premium
+
+    def _prob_above(target):
+        if target <= 0:
+            return 1.0
+        d2 = (np.log(spot / target) + (r - 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        return float(norm.cdf(d2))
+
+    if option_type == "call":
+        pop = _prob_above(breakeven_expiry)
+    else:
+        pop = 1.0 - _prob_above(breakeven_expiry)
+
+    # Reward: option value if spot moves one expected move toward profit
+    expected_move = spot * sigma * np.sqrt(T)
+    target_spot = spot + expected_move if option_type == "call" else max(spot - expected_move, 0.01)
+    value_at_target = _black_scholes_price(target_spot, strike, T, r, sigma, option_type)
+    reward = max(value_at_target - premium, 0.0)
+    reward_risk = min(reward / premium, 10.0) if premium > 0 else 0.0  # cap lottery-ticket ratios
+
+    ev = pop * reward_risk - (1.0 - pop)  # expected value per $1 risked
+    return pop, reward_risk, ev, breakeven_expiry
+
+
+def _pick_expirations(entered, available, max_n):
+    """Return the entered expiration plus the nearest available ones (by date), up to max_n."""
+    if not available:
+        return [entered]
+    avail = sorted(set(available))
+
+    def _d(s):
+        return datetime.strptime(s, "%Y-%m-%d").date()
+
+    picks = [entered] if entered in avail else []
+    try:
+        base = _d(entered)
+    except Exception:
+        base = _d(avail[0])
+    others = [e for e in avail if e not in picks]
+    others.sort(key=lambda e: abs((_d(e) - base).days))
+    for e in others:
+        if len(picks) >= max_n:
+            break
+        picks.append(e)
+    return picks[:max_n]
+
+
+def suggest_contracts(strike, expiration, option_type, premium, contracts=1,
+                      current_spx=None, underlying='SPX', min_pop=40.0,
+                      scan_pct=0.03, max_expirations=3, max_results=8):
+    """Scan the option chain for contracts with higher risk-adjusted expected value
+    than the one the user entered.
+
+    Keeps the entered option type (call/put). Scans strikes within +/- scan_pct of
+    spot across the entered expiration plus the nearest others. Ranks candidates by
+    EV per $1 risked (see _ev_score), returning those that BEAT the entered contract
+    on EV and clear the min_pop floor. Candidates that beat EV but fall below the POP
+    floor are reported separately (hidden_below_floor) so the UI can surface them.
+    """
+    import yfinance as yf
+
+    index = 'NDX' if underlying in ('NDX', 'QQQ') else 'SPX'
+    data = _fetch_options_data(index=index)
+    if data is None:
+        return None
+
+    r = 0.045
+    multiplier = 100
+    option_type = option_type.lower()
+    today = datetime.now().date()
+
+    # --- Spot price (mirror analyze_contract's sourcing) ---
+    close = data["hist"]["Close"]
+    spot_ticker = "^NDX" if underlying == 'NDX' else ("QQQ" if underlying == 'QQQ' else "^GSPC")
+    if current_spx and float(current_spx) > 0:
+        spot = float(current_spx)
+    else:
+        try:
+            intraday = yf.download(spot_ticker, period="1d", interval="2m", progress=False)
+            spot = float(intraday["Close"].iloc[-1]) if intraday is not None and len(intraday) > 0 else float(close.iloc[-1])
+        except Exception:
+            spot = float(close.iloc[-1])
+
+    opt_sym = "^NDX" if underlying == 'NDX' else ("QQQ" if underlying == 'QQQ' else "^SPX")
+    ticker = yf.Ticker(opt_sym)
+
+    # --- Baseline: entered contract EV ---
+    try:
+        entered_exp_date = datetime.strptime(expiration, "%Y-%m-%d").date()
+    except Exception:
+        return None
+    T_entered = max((entered_exp_date - today).days / 365, 1 / 365)
+    entered_iv = _implied_vol_from_premium(spot, strike, T_entered, r, premium, option_type)
+    entered_score = _ev_score(spot, strike, T_entered, r, entered_iv, premium, option_type)
+    if entered_score is None:
+        return None
+    entered_pop, entered_rr, entered_ev, _ = entered_score
+
+    exps = _pick_expirations(expiration, data.get("expirations", []), max_expirations)
+    low_k, high_k = spot * (1 - scan_pct), spot * (1 + scan_pct)
+
+    candidates = []   # beat entered EV and clear POP floor
+    hidden = []       # beat entered EV but below POP floor
+
+    for exp in exps:
+        try:
+            exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+        except Exception:
+            continue
+        dte = (exp_date - today).days
+        if dte < 0:
+            continue
+        T = max(dte / 365, 1 / 365)
+        try:
+            chain = ticker.option_chain(exp)
+        except Exception:
+            continue
+        table = chain.calls if option_type == "call" else chain.puts
+        band = table[(table["strike"] >= low_k) & (table["strike"] <= high_k)]
+
+        for _, row in band.iterrows():
+            k = float(row["strike"])
+            bid = float(row.get("bid", 0) or 0)
+            ask = float(row.get("ask", 0) or 0)
+            last = float(row.get("lastPrice", 0) or 0)
+            mid = (bid + ask) / 2 if (bid > 0 and ask > 0) else last
+            if mid < 0.10:
+                continue
+            # Reject stale/crossed quotes: an option can't trade below intrinsic value.
+            intrinsic = max(spot - k, 0.0) if option_type == "call" else max(k - spot, 0.0)
+            if mid < intrinsic * 0.98:
+                continue
+            iv = float(row.get("impliedVolatility", 0) or 0)
+            if iv < 0.01:  # implausible / placeholder IV from the feed — derive from price
+                iv = _implied_vol_from_premium(spot, k, T, r, mid, option_type)
+            if iv <= 0:
+                continue
+
+            vol_raw = row.get("volume", 0)
+            oi_raw = row.get("openInterest", 0)
+            vol = 0 if (vol_raw is None or (isinstance(vol_raw, float) and np.isnan(vol_raw))) else int(vol_raw)
+            oi = 0 if (oi_raw is None or (isinstance(oi_raw, float) and np.isnan(oi_raw))) else int(oi_raw)
+            if vol == 0 and oi == 0:
+                continue  # skip illiquid strikes
+
+            if abs(k - strike) < 0.01 and exp == expiration:
+                continue  # that's the entered contract
+
+            sc = _ev_score(spot, k, T, r, iv, mid, option_type)
+            if sc is None:
+                continue
+            pop, rr, ev, be = sc
+            if ev <= entered_ev:
+                continue  # must beat the entered contract
+
+            item = {
+                "strike": k,
+                "expiration": exp,
+                "dte": dte,
+                "option_type": option_type,
+                "premium": round(mid, 2),
+                "cost": round(mid * multiplier * contracts, 2),
+                "pop": round(pop * 100, 1),
+                "reward_risk": round(rr, 2),
+                "ev": round(ev, 3),
+                "ev_vs_entered": round(ev - entered_ev, 3),
+                "breakeven": round(be, 2),
+                "iv": round(iv * 100, 1),
+                "volume": vol,
+                "open_interest": oi,
+            }
+            if pop * 100 >= min_pop:
+                candidates.append(item)
+            else:
+                hidden.append(item)
+
+    candidates.sort(key=lambda x: x["ev"], reverse=True)
+    hidden.sort(key=lambda x: x["ev"], reverse=True)
+    top = candidates[:max_results]
+
+    better_count = len(candidates) + len(hidden)  # everything that beat the entered EV
+    return {
+        "spot": round(spot, 2),
+        "underlying": underlying,
+        "min_pop": min_pop,
+        "scan_pct": scan_pct,
+        "expirations_scanned": exps,
+        "entered": {
+            "strike": strike,
+            "expiration": expiration,
+            "option_type": option_type,
+            "premium": premium,
+            "cost": round(premium * multiplier * contracts, 2),
+            "pop": round(entered_pop * 100, 1),
+            "reward_risk": round(entered_rr, 2),
+            "ev": round(entered_ev, 3),
+            "rank": better_count + 1,
+            "total_ranked": better_count + 1,
+        },
+        "suggestions": top,
+        "suggestions_count": len(top),
+        "hidden_below_floor": {
+            "count": len(hidden),
+            "max_ev": hidden[0]["ev"] if hidden else None,
+            "max_ev_vs_entered": hidden[0]["ev_vs_entered"] if hidden else None,
+        },
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+    }

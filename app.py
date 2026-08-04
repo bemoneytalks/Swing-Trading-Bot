@@ -29,7 +29,7 @@ from data_fetcher import fetch_spx_data, fetch_index_data
 from indicators import add_all_features, get_feature_columns
 from gex import fetch_gex_data
 from confluence import analyze_ticker, analyze_ticker_with_confidence, analyze_exit, scan_watchlist, DEFAULT_WATCHLIST
-from options_analyzer import analyze_spx_options, analyze_contract
+from options_analyzer import analyze_spx_options, analyze_contract, suggest_contracts
 from portfolio import calculate_position_size
 from net_premium import (auto_update_today, get_premium_table, update_manual_premium,
                          fetch_net_premium_signal)
@@ -832,7 +832,35 @@ def api_options_contract():
         if result is None:
             return jsonify({"success": False, "error": "Could not fetch options data for " + underlying})
         result["success"] = True
-        return jsonify(result)
+        return jsonify(_sanitize(result))
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+@app.route("/api/options/suggest")
+def api_options_suggest():
+    try:
+        strike = float(request.args.get("strike", 0))
+        expiration = request.args.get("expiration", "")
+        option_type = request.args.get("type", "call")
+        premium = float(request.args.get("premium", 0))
+        contracts = int(request.args.get("contracts", 1))
+        current_spx = request.args.get("current_spx", None)
+        underlying = request.args.get("underlying", "SPX").upper()
+        min_pop = float(request.args.get("min_pop", 40))
+        max_results = int(request.args.get("max_results", 8))
+        if current_spx:
+            current_spx = float(current_spx)
+
+        if strike <= 0 or not expiration or premium <= 0:
+            return jsonify({"success": False, "error": "Strike, expiration, and premium are required"})
+
+        result = suggest_contracts(strike, expiration, option_type, premium, contracts,
+                                   current_spx, underlying, min_pop, max_results=max_results)
+        if result is None:
+            return jsonify({"success": False, "error": "Could not fetch options data for " + underlying})
+        result["success"] = True
+        return jsonify(_sanitize(result))
     except Exception as e:
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
 

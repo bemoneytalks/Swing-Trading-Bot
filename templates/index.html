@@ -4413,10 +4413,114 @@ async function analyzeContract() {
             </div>
         `;
         setStatus('Contract analyzed: ' + d.prob_profit + '% probability of profit');
+        loadContractSuggestions('contract-result', underlying, strike, exp, type, premium, qty, currentPrice);
     } catch (err) {
         document.getElementById('contract-result').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
         setStatus('Error analyzing contract');
     }
+}
+
+// ── Better-value contract suggestions ────────────────────────────────
+window._contractSug = {};
+
+async function loadContractSuggestions(containerId, underlying, strike, exp, type, premium, qty, currentPrice) {
+    const host = document.getElementById(containerId);
+    if (!host) return;
+    host.insertAdjacentHTML('beforeend',
+        '<div id="' + containerId + '-sug" class="card" style="margin-top:24px;">' +
+        '<div class="loading"><div class="spinner"></div><div>Scanning the chain for better-value contracts...</div></div></div>');
+    const panel = document.getElementById(containerId + '-sug');
+    try {
+        let url = '/api/options/suggest?strike=' + strike + '&expiration=' + exp + '&type=' + type
+            + '&premium=' + premium + '&contracts=' + (qty || 1) + '&underlying=' + underlying
+            + '&min_pop=0&max_results=40';
+        if (currentPrice) url += '&current_spx=' + currentPrice;
+        const res = await fetch(url);
+        const d = await res.json();
+        if (!d.success) { panel.remove(); return; }
+        window._contractSug[containerId] = d;
+        renderContractSuggestions(containerId, 40);
+    } catch (err) {
+        if (panel) panel.remove();
+    }
+}
+
+function renderContractSuggestions(containerId, floor) {
+    const d = window._contractSug[containerId];
+    const panel = document.getElementById(containerId + '-sug');
+    if (!d || !panel) return;
+
+    const all = d.suggestions || [];
+    const entered = d.entered;
+    const above = all.filter(s => s.pop >= floor).slice(0, 8);
+    const below = all.filter(s => s.pop < floor);
+    const hiddenMaxEv = below.length ? Math.max.apply(null, below.map(s => s.ev_vs_entered)) : 0;
+    const enteredRank = all.filter(s => s.ev > entered.ev).length + 1;
+
+    const fmt$ = n => '$' + Math.round(n).toLocaleString();
+    const expShort = s => {
+        const dt = new Date(s.expiration + 'T00:00:00');
+        return dt.toLocaleString('en-US', {month:'short', day:'numeric'}) + ' · ' + s.dte + 'd';
+    };
+    const tLabel = entered.option_type === 'call' ? 'C' : 'P';
+    const uLabel = d.underlying || 'SPX';
+
+    let rows = '';
+    if (above.length === 0) {
+        rows = '<tr><td colspan="6" style="padding:16px; text-align:center; color:#7d8590;">'
+            + 'No contracts clear the ' + floor + '% POP floor. Lower the floor to see options with higher reward.</td></tr>';
+    } else {
+        above.forEach(function(s, i) {
+            const best = i === 0;
+            const bg = best ? 'background:#0d2c1c;' : '';
+            const txt = best ? '#3fb950' : '#c9d1d9';
+            const muted = best ? '#3fb950' : '#7d8590';
+            const badge = best ? ' <span style="font-size:10px; background:#3fb950; color:#04140b; padding:1px 6px; border-radius:4px; margin-left:2px;">Best</span>' : '';
+            rows += '<tr style="' + bg + ' text-align:right;">'
+                + '<td style="text-align:left; padding:9px 8px; color:' + txt + ';">' + uLabel + ' ' + s.strike + ' ' + tLabel + badge
+                + '<div style="font-size:11px; color:' + muted + ';">' + expShort(s) + '</div></td>'
+                + '<td style="padding:9px 8px; color:' + (best?txt:'#7d8590') + ';">' + fmt$(s.cost) + '</td>'
+                + '<td style="padding:9px 8px; color:' + (best?txt:'#7d8590') + ';">' + s.pop + '%</td>'
+                + '<td style="padding:9px 8px; color:' + (best?txt:'#7d8590') + ';">' + s.reward_risk.toFixed(1) + '</td>'
+                + '<td style="padding:9px 8px; font-weight:600; color:' + txt + ';">' + (s.ev>=0?'+':'') + s.ev.toFixed(2) + '</td>'
+                + '<td style="padding:9px 8px; color:#3fb950;">+' + s.ev_vs_entered.toFixed(2) + '</td>'
+                + '</tr>';
+        });
+    }
+
+    const hiddenNote = below.length
+        ? '<div style="background:#2d1f00; color:#d29922; border-radius:6px; padding:8px 12px; margin-top:12px; font-size:12px;">'
+          + below.length + ' higher-EV contract' + (below.length>1?'s':'') + ' (up to +' + hiddenMaxEv.toFixed(2)
+          + ' EV) ' + (below.length>1?'are':'is') + ' below your ' + floor + '% POP floor — lower it to include ' + (below.length>1?'them':'it') + '.</div>'
+        : '';
+
+    panel.innerHTML =
+        '<div class="card-title">Better-value suggestions <span style="color:#7d8590; font-weight:400; font-size:12px;">· ranked by expected value per $1 risked</span></div>'
+        + '<div style="background:#161b22; border:1px solid #21262d; border-radius:8px; padding:12px 14px; margin:8px 0 16px;">'
+          + '<div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;">'
+            + '<span style="font-size:13px; color:#7d8590;">Your contract · ' + uLabel + ' ' + entered.strike + ' ' + tLabel + ' · ' + entered.expiration + '</span>'
+            + '<span style="font-size:12px; color:' + (enteredRank>1?'#ff7b72':'#3fb950') + ';">Ranks #' + enteredRank + ' of ' + (all.length+1) + ' by EV</span></div>'
+          + '<div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:8px;">'
+            + '<div><div style="font-size:11px; color:#7d8590;">Cost</div><div style="font-size:14px; color:#c9d1d9;">' + fmt$(entered.cost) + '</div></div>'
+            + '<div><div style="font-size:11px; color:#7d8590;">POP</div><div style="font-size:14px; color:#c9d1d9;">' + entered.pop + '%</div></div>'
+            + '<div><div style="font-size:11px; color:#7d8590;">Reward : risk</div><div style="font-size:14px; color:#c9d1d9;">' + entered.reward_risk.toFixed(1) + '</div></div>'
+            + '<div><div style="font-size:11px; color:#7d8590;">EV / $1</div><div style="font-size:14px; color:#c9d1d9;">' + (entered.ev>=0?'+':'') + entered.ev.toFixed(2) + '</div></div>'
+          + '</div></div>'
+        + '<div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">'
+          + '<span style="font-size:13px; color:#7d8590; white-space:nowrap;">Min POP</span>'
+          + '<input type="range" min="0" max="70" step="5" value="' + floor + '" style="flex:1;" '
+          + 'oninput="document.getElementById(\'' + containerId + '-popval\').textContent=this.value+\'%\'" '
+          + 'onchange="renderContractSuggestions(\'' + containerId + '\', parseInt(this.value))">'
+          + '<span id="' + containerId + '-popval" style="font-size:14px; font-weight:600; color:#c9d1d9; min-width:36px;">' + floor + '%</span></div>'
+        + '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:13px; min-width:520px;">'
+          + '<thead><tr style="color:#7d8590; font-size:11px; text-transform:uppercase; text-align:right; border-bottom:2px solid #21262d;">'
+          + '<th style="text-align:left; padding:8px;">Contract</th><th style="padding:8px;">Cost</th><th style="padding:8px;">POP</th>'
+          + '<th style="padding:8px;">R:R</th><th style="padding:8px;">EV/$1</th><th style="padding:8px;">vs yours</th></tr></thead>'
+          + '<tbody>' + rows + '</tbody></table></div>'
+        + hiddenNote
+        + '<div style="font-size:11px; color:#7d8590; margin-top:12px; line-height:1.6;">'
+          + 'POP = probability of profit at expiration. EV/$1 = expected value per dollar risked (probability × reward, net of cost). '
+          + 'Model estimates from Black-Scholes with live-chain implied volatility — research only, not financial advice.</div>';
 }
 
 // ===== NDX CONTRACT ANALYZER =====
@@ -4618,6 +4722,7 @@ async function analyzeNdxContract() {
             </div>
         `;
         setStatus('NDX contract analyzed: ' + d.prob_profit + '% probability of profit');
+        loadContractSuggestions('ndx-contract-result', underlying, strike, exp, type, premium, qty, currentPrice);
     } catch (err) {
         document.getElementById('ndx-contract-result').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
         setStatus('Error analyzing NDX contract');
